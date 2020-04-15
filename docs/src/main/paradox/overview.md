@@ -4,7 +4,7 @@ The Akka Persistence Spanner plugin
 
 ## Project Info
 
-@@project-info{ projectId="core" }
+@@project-info{ projectId="journal" }
 
 ## Dependencies
 
@@ -18,7 +18,7 @@ This plugin depends on Akka 2.6.x and note that it is important that all `akka-*
 dependencies are in the same version, so it is recommended to depend on them explicitly to avoid problems 
 with transient dependencies causing an unlucky mix of versions.
 
-@@dependencies{ projectId="core" }
+@@dependencies{ projectId="journal" }
 
 ## Contributing
 

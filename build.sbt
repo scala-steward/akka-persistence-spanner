@@ -34,7 +34,7 @@ def common: Seq[Setting[_]] = Seq(
       "-source",
       "1.8",
       "-target",
-      "1.8",
+      "1.8"
     ),
   headerLicense := Some(
       HeaderLicense.Custom(
@@ -56,17 +56,16 @@ lazy val dontPublish = Seq(
   publishArtifact in Compile := false
 )
 
-
 lazy val root = (project in file("."))
   .settings(common)
   .settings(dontPublish)
   .settings(
     name := "akka-persistence-spanner-root",
-    publishTo := Some(Resolver.file("Unused transient repository", file("target/unusedrepo"))),
-  ).aggregate(docs, journal)
+    publishTo := Some(Resolver.file("Unused transient repository", file("target/unusedrepo")))
+  )
+  .aggregate(docs, journal)
 
-
-lazy val journal= (project in file("journal"))
+lazy val journal = (project in file("journal"))
   .enablePlugins(AkkaGrpcPlugin)
   .settings(common)
   .settings(
@@ -95,4 +94,3 @@ lazy val docs = project
     publishRsyncArtifact := makeSite.value -> "www/",
     publishRsyncHost := "akkarepo@gustav.akka.io"
   )
-
