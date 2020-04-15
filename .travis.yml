@@ -1,0 +1,74 @@
+language: scala
+sudo: false
+
+services:
+  - docker
+
+before_install:
+  # using jabba for custom jdk management
+  - curl -sL https://raw.githubusercontent.com/shyiko/jabba/0.11.2/install.sh | bash && . ~/.jabba/jabba.sh
+  - jabba install adopt@~1.11-0
+
+# default script for jobs, that do not have any specified
+script:
+  - jabba use ${JDK:=adopt@~1.11-0}
+  - java -version
+  - ${PRE_CMD:=return 0} # do nothing if not set
+  - sbt -jvm-opts .jvmopts-travis "$CMD"
+
+jobs:
+  include:
+# TODO create whitesource project
+#    - stage: whitesource
+#      script: sbt whitesourceCheckPolicies whitesourceUpdate
+
+    - stage: check
+      script: sbt headerCheck || { echo "[error] Missing license headers found. Please run 'headerCreate' and commit the updated code."; false; }
+      name: "Copyright header check"
+    - script: sbt scalafmtCheck || { echo "[error] Unformatted code found. Please run 'Test/compile' and commit the reformatted code."; false; }
+      name: "Code style check"
+    - script: sbt scalafmtSbtCheck || { echo "[error] Unformatted sbt code found. Please run 'scalafmtSbt' and commit the reformatted code."; false; }
+      name: "Build code style check"
+    - env: CMD="+Test/compile"
+    - stage: test
+    - env:
+      - CMD=docs/paradox
+    - env:
+      - CMD=root/doc
+    - env:
+      - PRE_CMD="echo setup a spanner emulator"
+      - CMD=";test"
+      name: "Run tests (AdoptOpenJDK 11)"
+
+    - stage: publish
+      script: sbt +publish
+
+stages:
+  # runs on master commits and PRs
+  - name: check
+    if: NOT tag =~ ^v
+
+  # runs on main repo master commits and version-tagged commits
+  - name: whitesource
+    if: repo = akka/akka-persistence-spanner AND ( ( branch = master AND type = push ) OR tag =~ ^v )
+
+  # runs on main repo master commits and version-tagged commits
+  - name: publish
+    if: repo = akka/akka-persistence-spanner AND tag =~ ^v
+
+before_cache:
+  - find $HOME/.ivy2/ -name "ivydata-*.properties" -print -delete
+  - find $HOME/.sbt   -name "*.lock"               -print -delete
+
+cache:
+  directories:
+    - $HOME/.ivy2/cache
+    - $HOME/.sbt/boot
+    - $HOME/.jabba/jdk
+
+env:
+  global:
+    # encrypt with: travis encrypt BINTRAY_USER=...
+    - secure: "r/KxfbsPP7jgw90gtB7wPRdZ0cy8v+0+bek7KSr6btG0PfEVlXXPbhrpXQLUIIXse2gyHreCj2heAmSKPzZhR51/SedMKTFmC9WtNlOqZQsDDGXhWN3/fZSEegitoYsjP4GHA8DDb4klqbXKPEgtISxlebmKfnItW6eniNbNBpTCX7rLBt0unB8SgSpEsy8SeQRyUDf/2MG+cc4scp1vMj8A3iS1ucJI5xPegNJO9xqzHxBZ3TD6r6fIA8pZdNIYLiMBIYR7fju/6afq9kN3buGbNwrk1L+b5Kj8D0TuCwUFKK8r66mHZ7oTUq1hLHHPMtrDmDZQu/e7UroFcux/MyxIkDT32h/3L7BGbVGDdsEX8SCnuPosxn5SQmdgNdrkvAhS7hj8UetxeacnwxGPsI1K+qJ/TNmiDESzXLAwd4a3xnCxveE8g9CnYvZXMoo9bCjcDQK8G5irIIUqOR9CKr4Q5cIdGhlighei1d5KNsZIKGRqB30T5SAvqPFXFGfuuHK7wvXO6P9KoMMghspcoye6FrnYxBteX02d3n6z95wMXAO55GscXxQYEUn1yKEScJLWQOtKGvItLUmW5NbNS/PgM52JnKwN88sU0t2/3hJB2DB2MC1BnA6Wn6w62ChK39B65dxYufw7aaDL6f7pvurjOEyectX6V08uS/8SAak="
+    # encrypt with: travis encrypt BINTRAY_PASS=...
+    - secure: "MKFv2AAOhY4l7NCZY7Wa2OCiM8eL7LKpCRbF+K96YV3F+lHNCQIwTrYY8B9eprI/WbS+s6KszU8hVIdaxVxATK+k7DRYAG/54NkBVMx2wPEBupMovdvtEiUmFXIacAH6qY3lv0JeTvCu1tq1G/EEdNEgl51T0wjstcJWQEzqnwUOc/GytPsN0vM79lntNAR5PZ67HTDwW30i/xgsUHU1jYqTVFFZLXoAjkxVJ+Yub+lN2+lFHb2VsG971SQ8GO2bUANYlSelr6cF7k7B3J0au5lueHDDdOGUhsDSrGVmjZq5Ph0KU97AhvuyMHNdfjvwBdVR1i/lOl4f3rSjdxpgnUFCLbaQIj3kZ5vSOHY4dDTbYzKvj1fgf9GRB5g1t/TnQZEkziTyvs/BQklmAV0oM6KzUXHVUtvp6IEiqcko5aeye94naX/YCmZuMpiWCiAgAfqP+DTpufA3yMSWIZOsUF8pi+7tnlVcAiDvh6UOygRPx5jONtz5KBp9FD9ISU4yKyPdILHTtZd1BnuD+/r7AoJTux3qu5ukShF+8PFXncd4HooTTnw3euH2LFt8RYmqQp01DOBj2O0Fl+OjXJWvFRSKjAdLRkXroOEHR8HPbBq9ow0TVOtE7nqvajoymEAx77N3omcA27kOXHQL1uxnLZxIckpHRK4pp74fSiyPins="
