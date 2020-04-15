@@ -51,6 +51,6 @@ object Dependencies {
     googleAuth,
     akkaTestkit,
     logback,
-    scalaTest,
+    scalaTest
   )
 }
