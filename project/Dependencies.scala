@@ -20,6 +20,7 @@ object Dependencies {
 
     val spannerProtobuf = "com.google.api.grpc" % "proto-google-cloud-spanner-v1" % SpannerVersion % "protobuf-src"
     val spannerAdminProtobuf = "com.google.api.grpc" % "proto-google-cloud-spanner-admin-database-v1" % SpannerVersion % "protobuf-src"
+    val spannerAdminInstanceProtobuf = "com.google.api.grpc" % "proto-google-cloud-spanner-admin-instance-v1" % SpannerVersion % "protobuf-src"
 
     val grpcAuth = "io.grpc" % "grpc-auth" % GrpcVersion
     val googleAuth = "com.google.auth" % "google-auth-library-oauth2-http" % GoogleAuthVersion
@@ -47,6 +48,7 @@ object Dependencies {
     akkaStreamTestkit,
     spannerProtobuf,
     spannerAdminProtobuf,
+    spannerAdminInstanceProtobuf,
     grpcAuth,
     googleAuth,
     akkaTestkit,
