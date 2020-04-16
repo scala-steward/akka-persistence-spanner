@@ -16,8 +16,12 @@ object Dependencies {
     val akkaStream = "com.typesafe.akka" %% "akka-stream" % AkkaVersion
     val akkaPersistence = "com.typesafe.akka" %% "akka-persistence-typed" % AkkaVersion
     val akkaPersistenceQuery = "com.typesafe.akka" %% "akka-persistence-query" % AkkaVersion
+    val akkaDiscovery = "com.typesafe.akka" %% "akka-discovery" % AkkaVersion
 
     val spannerProtobuf = "com.google.api.grpc" % "proto-google-cloud-spanner-v1" % SpannerVersion % "protobuf-src"
+    val spannerAdminProtobuf = "com.google.api.grpc" % "proto-google-cloud-spanner-admin-database-v1" % SpannerVersion % "protobuf-src"
+    val spannerAdminInstanceProtobuf = "com.google.api.grpc" % "proto-google-cloud-spanner-admin-instance-v1" % SpannerVersion % "protobuf-src"
+
     val grpcAuth = "io.grpc" % "grpc-auth" % GrpcVersion
     val googleAuth = "com.google.auth" % "google-auth-library-oauth2-http" % GoogleAuthVersion
   }
@@ -28,7 +32,7 @@ object Dependencies {
     val akkaStreamTestkit = "com.typesafe.akka" %% "akka-stream-testkit" % AkkaVersion % Test
 
     val logback = "ch.qos.logback" % "logback-classic" % "1.2.3" % Test // EPL 1.0 / LGPL 2.1
-    val scalaTest = "org.scalatest" %% "scalatest" % "3.0.8" % Test // ApacheV2
+    val scalaTest = "org.scalatest" %% "scalatest" % "3.1.1" % Test // ApacheV2
     val junit = "junit" % "junit" % "4.12" % Test
     val junitInterface = "com.novocode" % "junit-interface" % "0.11" % Test
   }
@@ -40,8 +44,11 @@ object Dependencies {
     akkaPersistence,
     akkaPersistenceQuery,
     akkaPersistenceTck,
+    akkaDiscovery,
     akkaStreamTestkit,
     spannerProtobuf,
+    spannerAdminProtobuf,
+    spannerAdminInstanceProtobuf,
     grpcAuth,
     googleAuth,
     akkaTestkit,

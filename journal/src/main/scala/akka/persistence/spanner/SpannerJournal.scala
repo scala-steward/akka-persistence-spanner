@@ -4,8 +4,8 @@
 
 package akka.persistence.spanner
 
-import akka.persistence.{AtomicWrite, PersistentRepr}
 import akka.persistence.journal.AsyncWriteJournal
+import akka.persistence.{AtomicWrite, PersistentRepr}
 
 import scala.collection.immutable
 import scala.concurrent.Future
