@@ -36,7 +36,7 @@ jobs:
     - env:
       - CMD=root/doc
     - env:
-      - PRE_CMD="docker-compose -f docker/docker-compose.yml up -d; export SPANNER_EMULATOR_HOST=localhost:9010; ./docker/setup_emulator.sh"
+      - PRE_CMD="docker-compose version ; docker-compose -f docker/docker-compose.yml up -d ; export SPANNER_EMULATOR_HOST=localhost:9010; ./docker/setup_emulator.sh"
       - CMD=";test"
       name: "Run tests (AdoptOpenJDK 11)"
 
