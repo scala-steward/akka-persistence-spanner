@@ -8,6 +8,7 @@ before_install:
   # using jabba for custom jdk management
   - curl -sL https://raw.githubusercontent.com/shyiko/jabba/0.11.2/install.sh | bash && . ~/.jabba/jabba.sh
   - jabba install adopt@~1.11-0
+  - ./docker/install_gcloud.sh
 
 # default script for jobs, that do not have any specified
 script:
@@ -35,7 +36,7 @@ jobs:
     - env:
       - CMD=root/doc
     - env:
-      - PRE_CMD="./docker/install_gcloud.sh  && ./docker/setup_emulator.sh"
+      - PRE_CMD="./docker/setup_emulator.sh"
       - CMD=";test"
       name: "Run tests (AdoptOpenJDK 11)"
 

@@ -1,7 +1,8 @@
-#!/bin/bash -xe
+#!/bin/bash -x
+
+echo "Setting up emulator"
 
 docker-compose version && docker-compose  -f docker/docker-compose.yml up -d
-
 
 gcloud config configurations create emulator || true # may already exist
 gcloud config set api_endpoint_overrides/spanner http://localhost:9020/
