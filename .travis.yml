@@ -13,8 +13,7 @@ before_install:
 script:
   - jabba use ${JDK:=adopt@~1.11-0}
   - java -version
-  - ${PRE_CMD:=return 0} # do nothing if not set
-  - sbt -jvm-opts .jvmopts-travis "$CMD"
+  - ${PRE_CMD:=return 0} && sbt -jvm-opts .jvmopts-travis "$CMD"
 
 jobs:
   include:
@@ -36,7 +35,7 @@ jobs:
     - env:
       - CMD=root/doc
     - env:
-      - PRE_CMD="docker-compose version ; docker-compose -f docker/docker-compose.yml up -d ; export SPANNER_EMULATOR_HOST=localhost:9010; ./docker/setup_emulator.sh"
+      - PRE_CMD="docker-compose version && docker-compose -f docker/docker-compose.yml up -d && export SPANNER_EMULATOR_HOST=localhost:9010 &&  ./docker/setup_emulator.sh"
       - CMD=";test"
       name: "Run tests (AdoptOpenJDK 11)"
 
