@@ -3,6 +3,7 @@
 echo "Setting up emulator"
 
 #docker-compose version && docker-compose  -f docker/docker-compose.yml up -d
+gcloud config set auth/disable_credentials true
 gcloud components update --quiet
 gcloud beta emulators spanner start --quiet
 gcloud config configurations create emulator || true # may already exist
