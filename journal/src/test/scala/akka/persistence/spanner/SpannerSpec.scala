@@ -2,21 +2,40 @@ package akka.persistence.spanner
 
 import akka.actor.ActorSystem
 import akka.event.Logging
-import akka.event.Logging.{LogEvent, StdOutLogger}
 import akka.grpc.GrpcClientSettings
-import akka.testkit.{EventFilter, TestKitBase}
-import com.google.longrunning.Operation
+import akka.testkit.TestKitBase
 import com.google.spanner.admin.database.v1.{CreateDatabaseRequest, DatabaseAdminClient, DropDatabaseRequest}
-import com.google.spanner.admin.instance.v1.{CreateInstanceRequest, InstanceAdmin, InstanceAdminClient}
+import com.google.spanner.admin.instance.v1.{CreateInstanceRequest, InstanceAdminClient}
 import com.google.spanner.v1.{CreateSessionRequest, DeleteSessionRequest, ExecuteSqlRequest, SpannerClient}
 import com.typesafe.config.{Config, ConfigFactory}
-import org.scalatest.{BeforeAndAfterAll, Outcome, Suite}
 import org.scalatest.concurrent.ScalaFutures
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.time.{Millis, Seconds, Span}
 import org.scalatest.wordspec.AnyWordSpecLike
+import org.scalatest.{BeforeAndAfterAll, Outcome, Suite}
+
+import scala.concurrent.{Await, ExecutionContext}
+import scala.concurrent.duration._
 
 object SpannerSpec {
+  private var instanceCreated = false
+  def ensureInstanceCreated(client: InstanceAdminClient, spannerSettings: SpannerSettings)(
+      implicit ec: ExecutionContext
+  ): Unit =
+    this.synchronized {
+      if (!instanceCreated) {
+        Await.ready(
+          client
+            .createInstance(CreateInstanceRequest(spannerSettings.fullyQualifiedProject, spannerSettings.instance))
+            .recover {
+              case t if t.getMessage.contains("ALREADY_EXISTS") =>
+            },
+          10.seconds
+        )
+        instanceCreated = true
+      }
+    }
+
   def getCallerName(clazz: Class[_]): String = {
     val s = Thread.currentThread.getStackTrace
       .map(_.getClassName)
@@ -33,7 +52,6 @@ object SpannerSpec {
       akka.persistence.spanner {
         database = $databaseName
       }
-
       akka.grpc.client.spanner-client {
         host = localhost
         port = 9010
@@ -75,10 +93,9 @@ abstract class SpannerSpec(databaseName: String = SpannerSpec.getCallerName(getC
 
   val log = Logging(system, classOf[SpannerSpec])
   val spannerSettings = new SpannerSettings(system.settings.config.getConfig("akka.persistence.spanner"))
-
   val grpcSettings: GrpcClientSettings = GrpcClientSettings.fromConfig("spanner-client")
-  log.info("GrpcSettings {}")
 
+  // maybe create these once in an extension when we have lots of tests?
   val adminClient = DatabaseAdminClient(grpcSettings)
   val spannerClient = SpannerClient(grpcSettings)
   val instanceClient = InstanceAdminClient(grpcSettings)
@@ -87,13 +104,7 @@ abstract class SpannerSpec(databaseName: String = SpannerSpec.getCallerName(getC
 
   override protected def beforeAll(): Unit = {
     super.beforeAll()
-    // TODO only do this once in the JVM
-    instanceClient
-      .createInstance(CreateInstanceRequest(spannerSettings.fullyQualifiedProject, spannerSettings.instance))
-      .recover {
-        case t if t.getMessage.contains("ALREADY_EXISTS") =>
-      }
-      .futureValue
+    SpannerSpec.ensureInstanceCreated(instanceClient, spannerSettings)
 
     adminClient
       .createDatabase(
