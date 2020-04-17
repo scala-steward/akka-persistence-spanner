@@ -1,3 +1,7 @@
+/*
+ * Copyright (C) 2018-2019 Lightbend Inc. <http://www.lightbend.com>
+ */
+
 package akka.persistence.spanner
 
 import akka.actor.ActorSystem
@@ -51,6 +55,11 @@ object SpannerSpec {
     ConfigFactory.parseString(s"""
       akka.persistence.spanner {
         database = $databaseName
+
+        session-pool {
+          # emulator only supports a single transaction at a time
+          max-size = 1
+        }
       }
       akka.grpc.client.spanner-client {
         host = localhost
@@ -106,15 +115,17 @@ abstract class SpannerSpec(databaseName: String = SpannerSpec.getCallerName(getC
     super.beforeAll()
     SpannerSpec.ensureInstanceCreated(instanceClient, spannerSettings)
 
-    adminClient
-      .createDatabase(
-        CreateDatabaseRequest(
-          parent = spannerSettings.parent,
-          s"CREATE DATABASE ${spannerSettings.database}",
-          List(SpannerSpec.table)
-        )
-      )
-      .futureValue
+    Await.ready(
+      adminClient
+        .createDatabase(
+          CreateDatabaseRequest(
+            parent = spannerSettings.parent,
+            s"CREATE DATABASE ${spannerSettings.database}",
+            List(SpannerSpec.table)
+          )
+        ),
+      10.seconds
+    )
     log.info("Database created {}", spannerSettings.database)
   }
 
