@@ -7,11 +7,17 @@ package akka.persistence.spanner.internal
 import java.util.UUID
 
 import akka.actor.testkit.typed.TestException
-import akka.actor.testkit.typed.scaladsl.{ActorTestKit, ScalaTestWithActorTestKit, TestProbe}
+import akka.actor.testkit.typed.scaladsl.{ScalaTestWithActorTestKit, TestProbe}
 import akka.persistence.spanner.SpannerSettings
 import akka.persistence.spanner.internal.SessionPool.{GetSession, PoolBusy, PooledSession, Response}
-import akka.persistence.spanner.internal.SessionPoolStubbedSpec.{BatchSessionCreateInvocation, StubbedSpannerClient}
-import com.google.spanner.v1.{BatchCreateSessionsRequest, BatchCreateSessionsResponse, Session}
+import akka.persistence.spanner.internal.SessionPoolStubbedSpec.{
+  BatchSessionCreateInvocation,
+  DeleteSessionInvocation,
+  Invocation,
+  StubbedSpannerClient
+}
+import com.google.protobuf.empty.Empty
+import com.google.spanner.v1.{BatchCreateSessionsRequest, BatchCreateSessionsResponse, DeleteSessionRequest, Session}
 import com.typesafe.config.ConfigFactory
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpecLike
@@ -21,14 +27,24 @@ import scala.concurrent.{Future, Promise}
 import scala.util.{Failure, Success}
 
 object SessionPoolStubbedSpec {
+  sealed trait Invocation
   case class BatchSessionCreateInvocation(
       input: BatchCreateSessionsRequest,
       response: Promise[BatchCreateSessionsResponse]
-  )
-  class StubbedSpannerClient(val probe: TestProbe[BatchSessionCreateInvocation]) extends AbstractStubbedSpannerClient {
+  ) extends Invocation
+
+  case class DeleteSessionInvocation(input: DeleteSessionRequest, response: Promise[Empty]) extends Invocation
+
+  class StubbedSpannerClient(val probe: TestProbe[Invocation]) extends AbstractStubbedSpannerClient {
     override def batchCreateSessions(in: BatchCreateSessionsRequest): Future[BatchCreateSessionsResponse] = {
       val promise = Promise[BatchCreateSessionsResponse]
       probe.ref ! BatchSessionCreateInvocation(in, promise)
+      promise.future
+    }
+
+    override def deleteSession(in: DeleteSessionRequest): Future[Empty] = {
+      val promise = Promise[Empty]
+      probe.ref ! DeleteSessionInvocation(in, promise)
       promise.future
     }
   }
@@ -44,7 +60,7 @@ class SessionPoolStubbedSpec extends ScalaTestWithActorTestKit with Matchers wit
       """).withFallback(ConfigFactory.load().getConfig("akka.persistence.spanner")))
 
   class Setup() {
-    val probe = testKit.createTestProbe[BatchSessionCreateInvocation]()
+    val probe = testKit.createTestProbe[Invocation]()
     val stub = new StubbedSpannerClient(probe)
     val pool = testKit.spawn(SessionPool(stub, baseSettings))
     val sessions = List(Session("s1"), Session("s2"))
@@ -113,6 +129,16 @@ class SessionPoolStubbedSpec extends ScalaTestWithActorTestKit with Matchers wit
       sessionProbe.expectNoMessage()
       pool ! GetSession(sessionProbe.ref, id4)
       sessionProbe.expectMessage(PoolBusy(id4))
+    }
+
+    "deletes sessions on shutdown" in new Setup {
+      val response = probe.expectMessageType[BatchSessionCreateInvocation].response
+      response.complete(Success(BatchCreateSessionsResponse(sessions)))
+      testKit.stop(pool)
+      sessions.foreach { session =>
+        val request = probe.expectMessageType[DeleteSessionInvocation]
+        request.input shouldEqual DeleteSessionRequest(session.name)
+      }
     }
   }
 }
