@@ -8,6 +8,8 @@ import java.util.Base64
 
 import akka.Done
 import akka.actor.ActorSystem
+import akka.actor.typed.{ActorRef, SupervisorStrategy}
+import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.scaladsl.adapter._
 import akka.annotation.InternalApi
 import akka.event.Logging
@@ -59,9 +61,18 @@ final class SpannerJournal(config: Config) extends AsyncWriteJournal {
       SpannerClient(GrpcClientSettings.fromConfig("spanner-client"))
     }
 
-  // TODO supervision
-  // TODO shutdown?
-  private val sessionPool = context.spawn(SessionPool.apply(grpcClient, journalSettings), "session-pool")
+  private val sessionPool: ActorRef[SessionPool.Command] = context.spawn(
+    Behaviors
+      .supervise(SessionPool.apply(grpcClient, journalSettings))
+      .onFailure(
+        SupervisorStrategy.restartWithBackoff(
+          journalSettings.sessionPool.restartMinBackoff,
+          journalSettings.sessionPool.restartMaxBackoff,
+          0.1
+        )
+      ),
+    "session-pool"
+  )
 
   private val spannerInteractions = new SpannerInteractions(
     new SpannerGrpcClient(grpcClient, system.toTyped, sessionPool, journalSettings),

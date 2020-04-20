@@ -6,11 +6,11 @@ package akka.persistence.spanner.internal
 import java.util.UUID
 
 import akka.actor.typed.scaladsl.{AbstractBehavior, ActorContext, Behaviors, StashBuffer, TimerScheduler}
-import akka.actor.typed.{ActorRef, Behavior}
+import akka.actor.typed.{ActorRef, Behavior, PostStop, PreRestart, Signal}
 import akka.annotation.InternalApi
 import akka.persistence.spanner.SpannerSettings
 import akka.persistence.spanner.internal.SessionPool.{Command, GetSession, PoolBusy, PooledSession, ReleaseSession}
-import com.google.spanner.v1.{BatchCreateSessionsRequest, Session, SpannerClient}
+import com.google.spanner.v1.{BatchCreateSessionsRequest, DeleteSessionRequest, Session, SpannerClient}
 
 import scala.concurrent.duration.{Duration, FiniteDuration}
 import scala.util.{Failure, Success}
@@ -22,12 +22,7 @@ import scala.util.{Failure, Success}
  * Sessions are used to execute transactions
  * They are expensive so should be re-used.
  *
- * TODO:
- *  - Keep a live or re-creation, by default they are closed on the server if not used for 1 hour, can send a select 1 to keep alive
- *  - adaptable size
- *  - deal with broken session
- *  - exponential back off for session creation
- *  - cleanup on shutdown
+ * See https://github.com/akka/akka-persistence-spanner/issues/12 for future features
  *
  * See google advice for session pools: https://cloud.google.com/spanner/docs/sessions#create_and_size_the_session_cache
  *
@@ -76,7 +71,7 @@ private[spanner] object SessionPool {
 
           Behaviors.receiveMessagePartial {
             case InitialSessions(sessions) =>
-              stash.unstashAll(new SessionPool(sessions, ctx, timers, stash))
+              stash.unstashAll(new SessionPool(client, sessions, ctx, timers, stash))
             case RetrySessionCreation(when) =>
               if (when == Duration.Zero) {
                 ctx.log.info("Retrying session creation")
@@ -103,6 +98,7 @@ private[spanner] object SessionPool {
  */
 @InternalApi
 private[spanner] final class SessionPool(
+    client: SpannerClient,
     initialSessions: List[Session],
     ctx: ActorContext[Command],
     timers: TimerScheduler[Command],
@@ -148,4 +144,18 @@ private[spanner] final class SessionPool(
       log.error("Unexpected message in active state {}", other)
       this
   }
+
+  override def onSignal: PartialFunction[Signal, Behavior[Command]] = {
+    case PostStop =>
+      cleanupOldSessions()
+      Behaviors.same
+    case PreRestart =>
+      cleanupOldSessions()
+      Behaviors.same
+  }
+
+  private def cleanupOldSessions(): Unit =
+    (availableSessions ++ inUseSessions.values).foreach { session =>
+      client.deleteSession(DeleteSessionRequest(session.name))
+    }
 }

@@ -18,6 +18,8 @@ private[spanner] object SpannerSettings {
     val maxSize = config.getInt("max-size")
     val retryCreateInterval = config.getDuration("retry-create-interval").toScala
     val maxOutstandingRequests = config.getInt("max-outstanding-requests")
+    val restartMinBackoff = config.getDuration("restart-min-backoff").toScala
+    val restartMaxBackoff = config.getDuration("restart-max-backoff").toScala
   }
 }
 
