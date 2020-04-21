@@ -7,11 +7,14 @@ import java.util.UUID
 
 import akka.actor.typed.scaladsl.{AbstractBehavior, ActorContext, Behaviors, StashBuffer, TimerScheduler}
 import akka.actor.typed.{ActorRef, Behavior, PostStop, PreRestart, Signal}
+import akka.util.PrettyDuration._
 import akka.annotation.InternalApi
 import akka.persistence.spanner.SpannerSettings
-import akka.persistence.spanner.internal.SessionPool.{Command, GetSession, PoolBusy, PooledSession, ReleaseSession}
-import com.google.spanner.v1.{BatchCreateSessionsRequest, DeleteSessionRequest, Session, SpannerClient}
+import akka.persistence.spanner.SpannerSettings.SessionPoolSettings
+import akka.persistence.spanner.internal.SessionPool._
+import com.google.spanner.v1._
 
+import scala.collection.mutable
 import scala.concurrent.duration.{Duration, FiniteDuration}
 import scala.util.{Failure, Success}
 
@@ -35,12 +38,15 @@ private[spanner] object SessionPool {
 
   private final case class InitialSessions(sessions: List[Session]) extends Command
   private final case class RetrySessionCreation(in: FiniteDuration) extends Command
+  private case object KeepAlive extends Command
 
   sealed trait Response {
     val id: UUID
   }
   final case class PooledSession(session: Session, id: UUID) extends Response
   final case class PoolBusy(id: UUID) extends Response
+
+  private final case class AvailableSession(session: Session, lastUsed: Long)
 
   def apply(client: SpannerClient, settings: SpannerSettings): Behavior[SessionPool.Command] =
     Behaviors.withStash[Command](settings.sessionPool.maxOutstandingRequests) { stash =>
@@ -71,7 +77,8 @@ private[spanner] object SessionPool {
 
           Behaviors.receiveMessagePartial {
             case InitialSessions(sessions) =>
-              stash.unstashAll(new SessionPool(client, sessions, ctx, timers, stash))
+              timers.startTimerWithFixedDelay(KeepAlive, settings.sessionPool.keepAliveInterval)
+              stash.unstashAll(new SessionPool(client, sessions, ctx, timers, stash, settings.sessionPool))
             case RetrySessionCreation(when) =>
               if (when == Duration.Zero) {
                 ctx.log.info("Retrying session creation")
@@ -102,26 +109,28 @@ private[spanner] final class SessionPool(
     initialSessions: List[Session],
     ctx: ActorContext[Command],
     timers: TimerScheduler[Command],
-    stash: StashBuffer[Command]
+    stash: StashBuffer[Command],
+    settings: SessionPoolSettings
 ) extends AbstractBehavior[SessionPool.Command](ctx) {
+  private val keepAliveInMillis = settings.keepAliveInterval.toMillis
   private val log = ctx.log
-  private var availableSessions = initialSessions
+  private var availableSessions: mutable.Queue[AvailableSession] =
+    mutable.Queue(initialSessions.map(AvailableSession(_, System.currentTimeMillis())): _*)
   private var inUseSessions = Map.empty[UUID, Session]
 
   override def onMessage(msg: Command): Behavior[Command] = msg match {
     case gt @ GetSession(replyTo, id) =>
       log.info("GetSession from {} in-use {} available{}", replyTo, inUseSessions, availableSessions)
-      availableSessions match {
-        case x :: xs =>
-          replyTo ! PooledSession(x, id)
-          availableSessions = xs
-          inUseSessions += (id -> x)
-        case Nil =>
-          if (stash.isFull) {
-            replyTo ! PoolBusy(id)
-          } else {
-            stash.stash(gt)
-          }
+      if (availableSessions.nonEmpty) {
+        val next = availableSessions.dequeue()
+        replyTo ! PooledSession(next.session, id)
+        inUseSessions += (id -> next.session)
+      } else {
+        if (stash.isFull) {
+          replyTo ! PoolBusy(id)
+        } else {
+          stash.stash(gt)
+        }
       }
       this
     case ReleaseSession(id) =>
@@ -129,7 +138,7 @@ private[spanner] final class SessionPool(
       if (inUseSessions.contains(id)) {
         val session = inUseSessions(id)
         inUseSessions -= id
-        availableSessions = session :: availableSessions
+        availableSessions.enqueue(AvailableSession(session, System.currentTimeMillis()))
         stash.unstash(this, 1, identity)
       } else {
         log.error(
@@ -140,6 +149,35 @@ private[spanner] final class SessionPool(
         )
         this
       }
+    case KeepAlive =>
+      val currentTime = System.currentTimeMillis()
+      val toKeepAlive = availableSessions.collect {
+        case AvailableSession(session, lastUse) if (currentTime - lastUse) > keepAliveInMillis =>
+          session
+      }
+
+      if (toKeepAlive.nonEmpty) {
+        if (log.isInfoEnabled) {
+          log.info(
+            "The following sessions haven't been used in the last {}. Sending keep alive. {}",
+            settings.keepAliveInterval.pretty,
+            toKeepAlive
+          )
+        }
+        availableSessions = availableSessions.filterNot(s => toKeepAlive.contains(s.session))
+        toKeepAlive.foreach { session =>
+          val id = UUID.randomUUID()
+          inUseSessions += (id -> session)
+          ctx.pipeToSelf(client.executeSql(ExecuteSqlRequest(session.name, sql = "SELECT 1"))) {
+            case Success(_) =>
+              ReleaseSession(id)
+            case Failure(t) =>
+              log.warn("failed to keep session alive, may be re-tried again before expires server side", t)
+              ReleaseSession(id)
+          }
+        }
+      }
+      this
     case other =>
       log.error("Unexpected message in active state {}", other)
       this
@@ -155,7 +193,7 @@ private[spanner] final class SessionPool(
   }
 
   private def cleanupOldSessions(): Unit =
-    (availableSessions ++ inUseSessions.values).foreach { session =>
+    (availableSessions.map(_.session) ++ inUseSessions.values).foreach { session =>
       client.deleteSession(DeleteSessionRequest(session.name))
     }
 }
