@@ -1,5 +1,4 @@
 language: scala
-sudo: false
 
 services:
   - docker
@@ -7,8 +6,8 @@ services:
 before_install:
   # using jabba for custom jdk management
   - curl -sL https://raw.githubusercontent.com/shyiko/jabba/0.11.2/install.sh | bash && . ~/.jabba/jabba.sh
-  - jabba install adopt@~1.8-0
   - jabba install adopt@~1.11-0
+  - jabba install adopt@~1.8-0
 
 # default script for jobs, that do not have any specified
 script:
@@ -46,11 +45,16 @@ jobs:
       name: "Run tests (AdoptOpenJDK 11)"
 
     - stage: publish
-      script: sbt +publish
+    - env:
+      - JDK="adopt@~1.8-0"
+      - CMD=";+publish"
 
 stages:
   # runs on master commits and PRs
   - name: check
+    if: NOT tag =~ ^v
+
+  - name: test
     if: NOT tag =~ ^v
 
   # runs on main repo master commits and version-tagged commits
