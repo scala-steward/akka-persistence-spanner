@@ -13,7 +13,7 @@ before_install:
 script:
   - jabba use ${JDK:=adopt@~1.8-0}
   - java -version
-  - ${PRE_CMD:=return 0} && sbt -jvm-opts .jvmopts-travis "$CMD"
+  - ${PRE_CMD:=true} && sbt -jvm-opts .jvmopts-travis "$CMD"
 
 jobs:
   include:
@@ -48,6 +48,7 @@ jobs:
     - env:
       - JDK="adopt@~1.8-0"
       - CMD=";+publish"
+      name: "Publish release"
 
 stages:
   # runs on master commits and PRs
