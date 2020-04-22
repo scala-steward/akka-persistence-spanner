@@ -67,7 +67,7 @@ object SpannerSpec {
 
   def config(databaseName: String): Config = {
     val c = ConfigFactory.parseString(s"""
-      akka.persistence.journal.plugin = "akka.persistence.spanner"
+      akka.persistence.journal.plugin = "akka.persistence.spanner.journal"
       akka.test.timefactor = 2
       #instance-config
       akka.persistence.spanner {
@@ -259,12 +259,13 @@ trait SpannerLifecycle
       })
       .mkString("[", ", ", "]")
 
-  override protected def afterAll(): Unit = {
-    cleanup()
-    // not sure why this doesn't get called by super.afterAll
-    TestKit.shutdownActorSystem(system)
-    super.afterAll()
-  }
+  override protected def afterAll(): Unit =
+    try {
+      cleanup()
+    } finally {
+      TestKit.shutdownActorSystem(system)
+      super.afterAll()
+    }
 }
 
 /**
