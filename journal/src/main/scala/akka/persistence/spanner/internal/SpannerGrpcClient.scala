@@ -9,20 +9,19 @@ import java.util.UUID
 import akka.Done
 import akka.actor.typed.scaladsl.AskPattern._
 import akka.actor.typed.scaladsl.Behaviors
-import akka.actor.typed.scaladsl.adapter._
 import akka.actor.typed.{ActorSystem, SupervisorStrategy}
 import akka.annotation.InternalApi
 import akka.dispatch.ExecutionContexts
-import akka.event.Logging
 import akka.persistence.spanner.SpannerSettings
 import akka.persistence.spanner.internal.SessionPool._
 import akka.stream.scaladsl.Source
-import akka.util.Timeout
+import akka.util.{ConstantFun, Timeout}
 import com.google.protobuf.ByteString
 import com.google.protobuf.struct.{Struct, Value}
 import com.google.rpc.Code
 import com.google.spanner.v1.CommitRequest.Transaction
 import com.google.spanner.v1._
+import io.grpc.StatusRuntimeException
 import org.slf4j.LoggerFactory
 
 import scala.concurrent.Future
@@ -95,49 +94,48 @@ private[spanner] object SpannerGrpcClient {
   }
 
   /**
-   * This doesn't do retries. See
-   * https://github.com/akka/akka-persistence-spanner/issues/18 for re-trying
-   * with the same session
+   * Executes a write with retries if result is ABORTED
    */
   def write(mutations: Seq[Mutation]): Future[Unit] =
-    withSession { session =>
-      client.commit(
-        CommitRequest(
-          session.session.name,
-          Transaction.SingleUseTransaction(
-            TransactionOptions(TransactionOptions.Mode.ReadWrite(TransactionOptions.ReadWrite()))
-          ),
-          mutations
+    withWriteRetries { session =>
+      client
+        .commit(
+          CommitRequest(
+            session.session.name,
+            Transaction.SingleUseTransaction(
+              TransactionOptions(TransactionOptions.Mode.ReadWrite(TransactionOptions.ReadWrite()))
+            ),
+            mutations
+          )
         )
-      )
-    }.map(_ => ())
+    }.map(ConstantFun.scalaAnyToUnit)(ExecutionContexts.parasitic)
 
   /**
-   * Executes all the statements in a single BatchDML statement.
+   * Executes all the statements in a single BatchDML statement. If query is failed with ABORTED it is retried.
    *
    * @param statements to execute along with their params and param types
-   * @return Future is completed with faiure if status.code != Code.OK. In that case
-   *         the transaction won't be commited and none of the modifications will have
+   * @return Future is completed with failure if status.code != Code.OK. In that case
+   *         the transaction won't be committed and none of the modifications will have
    *         happened.
    */
-  def executeBatchDml(statements: List[(String, Struct, Map[String, Type])]): Future[Unit] = {
-    def createBatchDmlRequest(sessionId: String, transactionId: ByteString): ExecuteBatchDmlRequest = {
-      val s = statements.map {
-        case (sql, params, types) =>
-          ExecuteBatchDmlRequest.Statement(
-            sql,
-            Some(params),
-            types
-          )
+  def executeBatchDml(statements: List[(String, Struct, Map[String, Type])]): Future[Unit] =
+    withWriteRetries { session =>
+      def createBatchDmlRequest(sessionId: String, transactionId: ByteString): ExecuteBatchDmlRequest = {
+        val s = statements.map {
+          case (sql, params, types) =>
+            ExecuteBatchDmlRequest.Statement(
+              sql,
+              Some(params),
+              types
+            )
+        }
+        ExecuteBatchDmlRequest(
+          sessionId,
+          transaction = Some(TransactionSelector(TransactionSelector.Selector.Id(transactionId))),
+          s
+        )
       }
-      ExecuteBatchDmlRequest(
-        sessionId,
-        transaction = Some(TransactionSelector(TransactionSelector.Selector.Id(transactionId))),
-        s
-      )
-    }
 
-    withSession { session =>
       for {
         transaction <- client.beginTransaction(
           BeginTransactionRequest(
@@ -159,7 +157,6 @@ private[spanner] object SpannerGrpcClient {
         )
       } yield ()
     }
-  }
 
   /**
    * Execute a small query. Result can not be larger than 10 MiB. Larger results
@@ -201,7 +198,20 @@ private[spanner] object SpannerGrpcClient {
     result
   }
 
-  private def getSession(sessionUuid: UUID): Future[PooledSession] = {
+  private def withWriteRetries[T](f: PooledSession => Future[T]): Future[T] = withSession { session =>
+    val deadLine = settings.maxWriteRetryTimeout.fromNow
+    def tryWrite(retriesLeft: Int): Future[T] =
+      f(session).recoverWith {
+        case ex: StatusRuntimeException
+            if ex.getStatus == io.grpc.Status.ABORTED && retriesLeft > 0 && deadLine.hasTimeLeft() =>
+          log.debug("Write failed for [{}], retrying", session.id)
+          tryWrite(retriesLeft - 1)
+      }
+
+    tryWrite(settings.maxWriteRetries)
+  }
+
+  protected def getSession(sessionUuid: UUID): Future[PooledSession] = {
     implicit val timeout = Timeout(settings.sessionAcquisitionTimeout)
     pool
       .ask[SessionPool.Response](replyTo => GetSession(replyTo, sessionUuid))
