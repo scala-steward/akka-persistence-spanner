@@ -94,10 +94,8 @@ object SpannerSpec {
       }
        """)
     if (realSpanner) {
-      println("running with real spanner")
       c
     } else {
-      println("running against emulator")
       c.withFallback(emulatorConfig)
     }
   }
