@@ -129,7 +129,7 @@ final class SpannerReadJournal(system: ExtendedActorSystem, config: Config, cfgP
       nextOffset,
       offset => Some(currentEventsByTag(tag, offset)),
       1, // the same row comes back and is filtered due to how the offset works
-      settings.queryConfig.refreshInterval
+      settings.querySettings.refreshInterval
     )
   }
 
@@ -157,7 +157,7 @@ final class SpannerReadJournal(system: ExtendedActorSystem, config: Config, cfgP
       (_, _) => (),
       _ => Some(currentPersistenceIds()),
       0,
-      settings.queryConfig.refreshInterval
+      settings.querySettings.refreshInterval
     ).statefulMapConcat[String] { () =>
       var seenIds = Set.empty[String]
       pid => {

@@ -56,5 +56,5 @@ private[spanner] final class SpannerSettings(config: Config) {
   val sessionPool = new SessionPoolSettings(config.getConfig("session-pool"))
   val sessionAcquisitionTimeout = config.getDuration("session-acquisition-timeout").asScala
 
-  val queryConfig = new QuerySettings(config.getConfig("query"))
+  val querySettings = new QuerySettings(config.getConfig("query"))
 }
