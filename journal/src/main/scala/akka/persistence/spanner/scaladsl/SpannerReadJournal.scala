@@ -155,7 +155,7 @@ final class SpannerReadJournal(system: ExtendedActorSystem, config: Config, cfgP
         }
       },
       0,
-      settings.queryConfig.refreshInterval
+      settings.querySettings.refreshInterval
     )
 
   override def currentEventsByPersistenceId(
