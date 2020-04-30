@@ -4,8 +4,6 @@
 
 package akka.persistence.spanner.internal
 
-import java.util.UUID
-
 import akka.actor.testkit.typed.scaladsl.ActorTestKit
 import akka.actor.typed.ActorRef
 import akka.actor.typed.scaladsl.AskPattern._
@@ -33,7 +31,7 @@ class SessionPoolSpec extends SpannerSpec {
       val session =
         pool.ask[Response](replyTo => GetSession(replyTo, id1)).futureValue
       session.id shouldEqual id1
-      pool.tell(ReleaseSession(id1))
+      pool.tell(ReleaseSession(id1, recreate = false))
     }
 
     "should not return session until one available" in new Setup {
@@ -48,19 +46,19 @@ class SessionPoolSpec extends SpannerSpec {
       pool ! GetSession(probe.ref, 2L)
       probe.expectNoMessage()
 
-      pool ! ReleaseSession(1L)
+      pool ! ReleaseSession(1L, recreate = false)
       probe.expectMessageType[PooledSession].id should ===(2L)
     }
 
     "handle invalid return of session" in new Setup {
       pool ! GetSession(probe.ref, id1)
-      val session = probe.expectMessageType[PooledSession]
+      probe.expectMessageType[PooledSession]
 
       // oopsy
-      pool ! ReleaseSession(id2)
+      pool ! ReleaseSession(id2, recreate = false)
 
       // pool still works
-      pool ! ReleaseSession(id1)
+      pool ! ReleaseSession(id1, recreate = false)
       pool ! GetSession(probe.ref, id2)
       probe.expectMessageType[PooledSession]
     }

@@ -73,7 +73,7 @@ final private[spanner] class ContinuousQuery[S, T](
         case NextQuery => next()
         case ContinuousQuery.Status =>
           log.info(
-            "Status: has been pulled? {}. subStreamFinished {}. innerSink has been pulled? {}, inner sink closed {}",
+            "Status: has been pulled? {}. subStreamFinished {}. innerSink has been pulled? {}, inner sink closed {}. Buffered element: " + nextRow,
             isAvailable(out),
             subStreamFinished,
             sinkIn.hasBeenPulled,

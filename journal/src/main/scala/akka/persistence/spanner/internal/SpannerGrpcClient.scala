@@ -9,7 +9,7 @@ import java.util.concurrent.atomic.AtomicLong
 import akka.{Done, NotUsed}
 import akka.actor.typed.scaladsl.AskPattern._
 import akka.actor.typed.scaladsl.Behaviors
-import akka.actor.typed.{ActorSystem, SupervisorStrategy}
+import akka.actor.typed.{ActorRef, ActorSystem, SupervisorStrategy}
 import akka.annotation.InternalApi
 import akka.dispatch.ExecutionContexts
 import akka.persistence.spanner.SpannerSettings
@@ -22,7 +22,7 @@ import com.google.rpc.Code
 import com.google.spanner.v1.CommitRequest.Transaction
 import com.google.spanner.v1._
 import io.grpc.StatusRuntimeException
-import org.slf4j.{LoggerFactory}
+import org.slf4j.LoggerFactory
 import akka.actor.typed.scaladsl.LoggerOps
 
 import scala.concurrent.{Future, TimeoutException}
@@ -45,7 +45,7 @@ private[spanner] object SpannerGrpcClient {
 /**
  * A thin wrapper around the gRPC client to expose only what the plugin needs.
  */
-@InternalApi private[spanner] final class SpannerGrpcClient(
+@InternalApi private[spanner] class SpannerGrpcClient(
     name: String,
     client: SpannerClient,
     system: ActorSystem[_],
@@ -62,18 +62,7 @@ private[spanner] object SpannerGrpcClient {
 
   private def nextSessionId(): Long = sessionIdCounter.incrementAndGet()
 
-  private val pool = system.systemActorOf(
-    Behaviors
-      .supervise(SessionPool.apply(client, settings))
-      .onFailure(
-        SupervisorStrategy.restartWithBackoff(
-          settings.sessionPool.restartMinBackoff,
-          settings.sessionPool.restartMaxBackoff,
-          0.1
-        )
-      ),
-    s"$name-session-pool"
-  )
+  private val pool = createPool()
 
   /**
    * Note that this grabs its own session from the pool rather than require one as a parameter, it will also return that
@@ -96,11 +85,7 @@ private[spanner] object SpannerGrpcClient {
     Source
       .futureSource(result)
       .watchTermination() { (_, terminationFuture) =>
-        terminationFuture.onComplete { _ =>
-          log.debug("Streaming query {} finished: {}", sessionId, sql)
-          pool.tell(ReleaseSession(sessionId))
-        }
-        terminationFuture
+        releaseSessionOnComplete(terminationFuture, sessionId)
       }
   }
 
@@ -209,23 +194,30 @@ private[spanner] object SpannerGrpcClient {
     val sessionId = nextSessionId()
     val result = getSession(sessionId)
       .flatMap(f)
+    releaseSessionOnComplete(result, sessionId)
+  }
 
-    result.onComplete {
+  private def releaseSessionOnComplete[T](f: Future[T], sessionId: Long): Future[T] = {
+    f.onComplete {
       case Success(_) =>
         log.trace("Operation successful, releasing session [{}]", sessionId)
-        pool.tell(ReleaseSession(sessionId))
+        pool.tell(ReleaseSession(sessionId, recreate = false))
       case Failure(PoolBusyException) =>
         // no need to release it
         log.debug("Acquiring session, pool busy")
       case Failure(t: TimeoutException) =>
+        // FIXME, why? The request could be in the stash of the mailbox
         // no need to release it
         log.debug("Acquiring session timed out. Session id: " + sessionId, t.getMessage)
+      case Failure(t: StatusRuntimeException) if t.getStatus.getCode == SessionDeleted.statusCode =>
+        log.warn("User session failed with possible session not found. Re-creating session. Message: {}", t.getMessage)
+        pool.tell(ReleaseSession(sessionId, recreate = true))
       case Failure(t) =>
         // release
         log.debug("User query failed: {}. Returning session [{}]", t.getMessage, sessionId)
-        pool.tell(ReleaseSession(sessionId))
-    }((ExecutionContexts.parasitic))
-    result
+        pool.tell(ReleaseSession(sessionId, recreate = false))
+    }(ExecutionContexts.parasitic)
+    f
   }
 
   private def withWriteRetries[T](f: () => Future[T])(
@@ -255,4 +247,19 @@ private[spanner] object SpannerGrpcClient {
         case Failure(t) => Failure(t)
       }(ExecutionContexts.parasitic)
   }
+
+  // exposed for testing
+  protected def createPool(): ActorRef[Command] =
+    system.systemActorOf(
+      Behaviors
+        .supervise(SessionPool.apply(client, settings))
+        .onFailure(
+          SupervisorStrategy.restartWithBackoff(
+            settings.sessionPool.restartMinBackoff,
+            settings.sessionPool.restartMaxBackoff,
+            0.1
+          )
+        ),
+      s"$name-session-pool"
+    )
 }

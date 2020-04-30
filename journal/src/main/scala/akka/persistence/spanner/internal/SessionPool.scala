@@ -10,9 +10,9 @@ import akka.actor.typed.scaladsl.LoggerOps
 import akka.util.PrettyDuration._
 import akka.annotation.InternalApi
 import akka.persistence.spanner.SpannerSettings
-import akka.persistence.spanner.SpannerSettings.SessionPoolSettings
 import akka.persistence.spanner.internal.SessionPool._
 import com.google.spanner.v1._
+import io.grpc.StatusRuntimeException
 
 import scala.collection.mutable
 import scala.concurrent.duration._
@@ -34,10 +34,13 @@ import scala.util.{Failure, Success}
 private[spanner] object SessionPool {
   sealed trait Command
   final case class GetSession(replyTo: ActorRef[Response], id: Long) extends Command
-  final case class ReleaseSession(id: Long) extends Command
+  final case class ReleaseSession(id: Long, recreate: Boolean) extends Command
 
   private final case class InitialSessions(sessions: List[Session]) extends Command
   private final case class RetrySessionCreation(in: FiniteDuration) extends Command
+  private final case object CreateSingleSession extends Command
+  private final case class SessionCreated(session: Session) extends Command
+  private final case class SessionCreateFailed(t: Throwable) extends Command
   private case object KeepAlive extends Command
   private case object Stats extends Command
 
@@ -47,8 +50,8 @@ private[spanner] object SessionPool {
   final case class PooledSession(session: Session, id: Long) extends Response
   final case class PoolBusy(id: Long) extends Response
 
-  private final case class ReAddAfterKeepAlive(session: Session) extends Command
-  private final case class ThrowAwayAfterKeepAliveFail(session: Session, cause: Throwable) extends Command
+  private final case class SessionKeepAliveSuccess(session: Session) extends Command
+  private final case class SessionKeepAliveFailure(session: Session, cause: Throwable) extends Command
 
   private final case class AvailableSession(session: Session, lastUsed: Long)
 
@@ -87,7 +90,9 @@ private[spanner] object SessionPool {
               timers.startTimerWithFixedDelay(KeepAlive, settings.sessionPool.keepAliveInterval)
               // FIXME Make configurable https://github.com/akka/akka-persistence-spanner/issues/42
               timers.startTimerWithFixedDelay(Stats, 1.second)
-              stash.unstashAll(new SessionPool(client, sessions, ctx, timers, settings.sessionPool))
+              stash.unstashAll(
+                new SessionPool(client, sessions, ctx, timers, settings)
+              )
             case RetrySessionCreation(when) =>
               if (when == Duration.Zero) {
                 ctx.log.debug("Retrying session creation")
@@ -119,9 +124,9 @@ private[spanner] final class SessionPool(
     initialSessions: List[Session],
     ctx: ActorContext[Command],
     timers: TimerScheduler[Command],
-    settings: SessionPoolSettings
+    settings: SpannerSettings
 ) extends AbstractBehavior[SessionPool.Command](ctx) {
-  private val keepAliveInMillis = settings.keepAliveInterval.toMillis
+  private val keepAliveInMillis = settings.sessionPool.keepAliveInterval.toMillis
   private val log = ctx.log
   private var availableSessions: mutable.Queue[AvailableSession] =
     mutable.Queue(initialSessions.map(AvailableSession(_, System.currentTimeMillis())): _*)
@@ -144,7 +149,7 @@ private[spanner] final class SessionPool(
       if (availableSessions.nonEmpty) {
         handOutSession(id, replyTo)
       } else {
-        if (requestQueue.size >= settings.maxOutstandingRequests) {
+        if (requestQueue.size >= settings.sessionPool.maxOutstandingRequests) {
           log.warn("Session pool request queue full, denying request for pool")
           replyTo ! PoolBusy(id)
         } else {
@@ -153,14 +158,19 @@ private[spanner] final class SessionPool(
         }
       }
       this
-    case ReleaseSession(id) =>
+    case ReleaseSession(id, shouldRecreate) =>
       uses += 1
       if (inUseSessions.contains(id)) {
         val session = inUseSessions(id)
         log.trace("Session [{}], [{}] released", id, session.name)
         inUseSessions -= id
-        availableSessions.enqueue(AvailableSession(session, System.currentTimeMillis()))
-        handOutSessionToQueuedRequest()
+        if (!shouldRecreate) {
+          availableSessions.enqueue(AvailableSession(session, System.currentTimeMillis()))
+          handOutSessionToQueuedRequest()
+        } else {
+          log.debug("Session released with should re-create. Not returning this session to the pool")
+          ctx.self ! CreateSingleSession
+        }
       } else if (requestQueue.exists(_.id == id)) {
         // requestor gave up before they got a session
         log.trace("Queued session request [{}] given up without getting a session", id)
@@ -189,7 +199,7 @@ private[spanner] final class SessionPool(
         if (log.isDebugEnabled) {
           log.debugN(
             "The following sessions haven't been used in the last {}. Sending keep alive. [{}]",
-            settings.keepAliveInterval.pretty,
+            settings.sessionPool.keepAliveInterval.pretty,
             toKeepAlive.map(_.name)
           )
         }
@@ -197,26 +207,53 @@ private[spanner] final class SessionPool(
 
         toKeepAlive.foreach { session =>
           ctx.pipeToSelf(client.executeSql(ExecuteSqlRequest(session.name, sql = "SELECT 1"))) {
-            case Success(_) => ReAddAfterKeepAlive(session)
-            case Failure(t) => ThrowAwayAfterKeepAliveFail(session, t)
+            case Success(_) => SessionKeepAliveSuccess(session)
+            case Failure(t) => SessionKeepAliveFailure(session, t)
           }
         }
       }
       this
 
-    case ReAddAfterKeepAlive(session) =>
+    case SessionKeepAliveSuccess(session) =>
       availableSessions.enqueue(AvailableSession(session, System.currentTimeMillis()))
       handOutSessionToQueuedRequest()
       this
 
-    case ThrowAwayAfterKeepAliveFail(session, cause) =>
-      log.warn(
-        s"Failed to keep session [${session.name}] alive, may be re-tried again before expires server side",
-        cause
-      )
-      // FIXME is this really the right thing to do?
-      availableSessions.enqueue(AvailableSession(session, System.currentTimeMillis()))
+    case SessionKeepAliveFailure(session, cause) =>
+      cause match {
+        case t: StatusRuntimeException if t.getStatus.getCode == SessionDeleted.statusCode =>
+          log.warn(
+            "Keep alive of session failed with NOT_FOUND. Re-creating session and adding new instance to pool.",
+            t
+          )
+          context.self ! CreateSingleSession
+        case _ =>
+          log.warn(
+            s"Failed to keep session [${session.name}] alive, may be re-tried again before expires server side. " +
+            s"Only Status.NOT_FOUND causes a session to be re-created.",
+            cause
+          )
+          availableSessions.enqueue(AvailableSession(session, System.currentTimeMillis()))
+          handOutSessionToQueuedRequest()
+      }
+      this
+
+    case CreateSingleSession =>
+      context.pipeToSelf(client.createSession(CreateSessionRequest(settings.fullyQualifiedDatabase))) {
+        case Success(s) => SessionCreated(s)
+        case Failure(t) => SessionCreateFailed(t)
+      }
+      this
+
+    case SessionCreated(s) =>
+      log.debug("Replacement session created {}", s)
+      availableSessions.enqueue(AvailableSession(s, System.currentTimeMillis()))
       handOutSessionToQueuedRequest()
+      this
+
+    case SessionCreateFailed(t) =>
+      log.warn("Failed to create replacement session. It will be retried.", t)
+      timers.startSingleTimer(CreateSingleSession, settings.sessionPool.retryCreateInterval)
       this
 
     case Stats =>
