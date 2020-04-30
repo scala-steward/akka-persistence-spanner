@@ -26,6 +26,13 @@ private[spanner] object SpannerSettings {
     val restartMinBackoff = config.getDuration("restart-min-backoff").asScala
     val restartMaxBackoff = config.getDuration("restart-max-backoff").asScala
     val keepAliveInterval = config.getDuration("keep-alive-interval").asScala
+
+    val statsInternal: Option[FiniteDuration] = config.getString("stats-interval").toLowerCase match {
+      case "off" => None
+      case _ => Some(config.getDuration("stats-interval").asScala)
+    }
+
+    val statsLogger = config.getString("stats-logger")
   }
 }
 

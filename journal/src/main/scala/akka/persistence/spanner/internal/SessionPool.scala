@@ -13,6 +13,7 @@ import akka.persistence.spanner.SpannerSettings
 import akka.persistence.spanner.internal.SessionPool._
 import com.google.spanner.v1._
 import io.grpc.StatusRuntimeException
+import org.slf4j.LoggerFactory
 
 import scala.collection.mutable
 import scala.concurrent.duration._
@@ -88,8 +89,7 @@ private[spanner] object SessionPool {
             case InitialSessions(sessions) =>
               ctx.log.debug("Sessions created [{}]", sessions)
               timers.startTimerWithFixedDelay(KeepAlive, settings.sessionPool.keepAliveInterval)
-              // FIXME Make configurable https://github.com/akka/akka-persistence-spanner/issues/42
-              timers.startTimerWithFixedDelay(Stats, 1.second)
+              settings.sessionPool.statsInternal.foreach(duration => timers.startTimerWithFixedDelay(Stats, duration))
               stash.unstashAll(
                 new SessionPool(client, sessions, ctx, timers, settings)
               )
@@ -126,6 +126,7 @@ private[spanner] final class SessionPool(
     timers: TimerScheduler[Command],
     settings: SpannerSettings
 ) extends AbstractBehavior[SessionPool.Command](ctx) {
+  private val statsLogger = LoggerFactory.getLogger(settings.sessionPool.statsLogger)
   private val keepAliveInMillis = settings.sessionPool.keepAliveInterval.toMillis
   private val log = ctx.log
   private var availableSessions: mutable.Queue[AvailableSession] =
@@ -256,10 +257,14 @@ private[spanner] final class SessionPool(
       timers.startSingleTimer(CreateSingleSession, settings.sessionPool.retryCreateInterval)
       this
 
+    case SessionCreateFailed(t) =>
+      log.warn("Failed to create replacement session. It will be retried.", t)
+      timers.startSingleTimer(CreateSingleSession, settings.sessionPool.retryCreateInterval)
+      this
+
     case Stats =>
-      // improve this in https://github.com/akka/akka-persistence-spanner/issues/51
-      log.infoN(
-        "in use {}. available {}. used since last stats: {}. Ids {}. Request queue size {}",
+      statsLogger.debugN(
+        "Sessions inUse {}. Sessions available {}. Uss since last stats: {}. Ids {}. Request queue size {}",
         inUseSessions.size,
         availableSessions.size,
         uses,
