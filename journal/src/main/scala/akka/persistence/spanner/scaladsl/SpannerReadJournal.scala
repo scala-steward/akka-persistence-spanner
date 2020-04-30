@@ -21,13 +21,14 @@ import akka.persistence.spanner.internal.SpannerJournalInteractions.Schema
 import akka.persistence.spanner.internal.{ContinuousQuery, SpannerGrpcClientExtension}
 import akka.persistence.spanner.{SpannerOffset, SpannerSettings}
 import akka.serialization.SerializationExtension
-import akka.stream.scaladsl
+import akka.stream.{scaladsl, OverflowStrategy}
 import akka.stream.scaladsl.Source
 import com.google.protobuf.struct.Value.Kind.StringValue
 import com.google.protobuf.struct.{Struct, Value}
 import com.google.spanner.v1.{Type, TypeCode}
 import com.typesafe.config.Config
 import org.slf4j.LoggerFactory
+
 import scala.collection.immutable
 
 object SpannerReadJournal {
@@ -56,7 +57,7 @@ final class SpannerReadJournal(system: ExtendedActorSystem, config: Config, cfgP
   private val grpcClient = SpannerGrpcClientExtension(system.toTyped).clientFor(sharedConfigPath)
 
   private val EventsByTagSql =
-    s"SELECT ${Schema.Journal.Columns.mkString(",")} from ${settings.journalTable} WHERE @tag IN UNNEST(tags) AND write_time >= @write_time ORDER BY write_time, persistence_id, sequence_nr "
+    s"SELECT ${Schema.Journal.Columns.mkString(",")} from ${settings.journalTable} WHERE @tag IN UNNEST(tags) AND write_time >= @write_time ORDER BY write_time, persistence_id, sequence_nr LIMIT 3"
 
   private val PersistenceIdsQuery =
     s"SELECT DISTINCT persistence_id from ${settings.journalTable}"
@@ -84,6 +85,7 @@ final class SpannerReadJournal(system: ExtendedActorSystem, config: Config, cfgP
         )
       )
       .statefulMapConcat(deserializeAndAddOffset(spannerOffset))
+      .buffer(100, OverflowStrategy.backpressure)
       .mapMaterializedValue(_ => NotUsed)
   }
 

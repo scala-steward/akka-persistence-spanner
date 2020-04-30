@@ -81,15 +81,16 @@ class EventProcessorStream[Event: ClassTag](
   def runQueryStream(killSwitch: SharedKillSwitch, histogram: Histogram): Unit =
     RestartSource
       .withBackoff(minBackoff = 500.millis, maxBackoff = 20.seconds, randomFactor = 0.1) { () =>
-        Source.futureSource {
-          readOffset().map { offset =>
-            log.infoN("Starting stream for tag [{}] from offset [{}]", tag, offset)
-            processEventsByTag(offset, histogram)
-            // groupedWithin can be used here to improve performance by reducing number of offset writes,
-            // with the trade-off of possibility of more duplicate events when stream is restarted
-              .mapAsync(1)(writeOffset)
+        Source
+          .futureSource {
+            readOffset().map { offset =>
+              log.infoN("Starting stream for tag [{}] from offset [{}]", tag, offset)
+              processEventsByTag(NoOffset, histogram)
+              // groupedWithin can be used here to improve performance by reducing number of offset writes,
+              // with the trade-off of possibility of more duplicate events when stream is restarted
+                .mapAsync(1)(writeOffset)
+            }
           }
-        }
       }
       .via(killSwitch.flow)
       .runWith(Sink.ignore)
@@ -99,9 +100,16 @@ class EventProcessorStream[Event: ClassTag](
       eventEnvelope.event match {
         case event: Event => {
           // Times from different nodes, take with a pinch of salt
-          val latency = System.currentTimeMillis() - eventEnvelope.timestamp
-          histogram.recordValue(latency)
-          log.debugN(
+          val current = System.currentTimeMillis()
+          val latency = current - eventEnvelope.timestamp
+          if (latency < 0) {
+            log.info("Not recording time as negative. Current {}, from env: {}", eventEnvelope.timestamp)
+          } else if (latency > histogram.getHighestTrackableValue) {
+            log.warn("Not tracking value, too large: {}", latency)
+          } else {
+            histogram.recordValue(latency)
+          }
+          log.infoN(
             "Tag {} Event {} persistenceId {}, sequenceNr {}. Latency {}",
             tag,
             event,

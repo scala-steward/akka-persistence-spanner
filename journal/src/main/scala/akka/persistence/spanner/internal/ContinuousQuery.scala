@@ -4,6 +4,8 @@
 
 package akka.persistence.spanner.internal
 
+import java.util.concurrent.atomic.AtomicLong
+
 import akka.NotUsed
 import akka.annotation.InternalApi
 import akka.persistence.spanner.internal.ContinuousQuery.NextQuery
@@ -30,6 +32,8 @@ private[spanner] object ContinuousQuery {
 
   private case object NextQuery
   private case object Status
+
+  val atomicLong = new AtomicLong(0)
 }
 
 /**
@@ -54,6 +58,8 @@ final private[spanner] class ContinuousQuery[S, T](
   val out = Outlet[T]("spanner.out")
   override def shape: SourceShape[T] = SourceShape(out)
 
+  val id = ContinuousQuery.atomicLong.incrementAndGet()
+
   override def createLogic(inheritedAttributes: Attributes): GraphStageLogic =
     new TimerGraphStageLogicWithLogging(shape) with OutHandler {
       var nextRow: OptionVal[T] = OptionVal.none[T]
@@ -65,7 +71,7 @@ final private[spanner] class ContinuousQuery[S, T](
       def pushAndUpdateState(t: T) = {
         state = updateState(state, t)
         nrElements += 1
-        log.debug("pushing {}", t)
+        log.debug(s"[id=$id] pushing {}", t)
         push(out, t)
       }
 
@@ -73,7 +79,7 @@ final private[spanner] class ContinuousQuery[S, T](
         case NextQuery => next()
         case ContinuousQuery.Status =>
           log.debug(
-            "Status: has been pulled? {}. subStreamFinished {}. innerSink has been pulled? {}, inner sink closed {}",
+            s"[id=$id] Status: has been pulled? {}. subStreamFinished {}. innerSink has been pulled? {}, inner sink closed {}. Buffered row " + nextRow,
             isAvailable(out),
             subStreamFinished,
             sinkIn.hasBeenPulled,
@@ -83,45 +89,45 @@ final private[spanner] class ContinuousQuery[S, T](
 
       def next(): Unit =
         if (nrElements <= threshold) {
-          log.debug("Scheduling next query for later")
+          log.info(s"[id=$id] Scheduling next query for later")
           nrElements = Long.MaxValue
           scheduleOnce(NextQuery, refreshInterval)
         } else {
-          log.debug("Running next query now")
+          log.debug(s"[id=$id] Running next query now")
           nrElements = 0
           subStreamFinished = false
           val source = nextQuery(state)
-          log.debug("Next source {}. Current state {} {}", source, nextRow, state)
+          log.debug(s"[id=$id] Next source {}. Current state {} {}", source, nextRow, state)
           source match {
             case Some(source) =>
               sinkIn = new SubSinkInlet[T]("Yep")
               sinkIn.setHandler(new InHandler {
                 override def onPush(): Unit = {
-                  log.debug("onPush inner")
+                  log.debug(s"[id=$id] onPush inner")
                   if (isAvailable(out)) {
                     if (!nextRow.isEmpty) {
                       throw new IllegalStateException(s"onPush called when we already have: " + nextRow)
                     }
                     val element = sinkIn.grab()
-                    log.debug("onPush inner pushing right away {}", element)
+                    log.debug(s"[id=$id] onPush inner pushing right away {}", element)
                     pushAndUpdateState(element)
                     sinkIn.pull()
                   } else {
                     if (!nextRow.isEmpty) {
-                      throw new IllegalStateException(s"onPush called when we already have: " + nextRow)
+                      throw new IllegalStateException(s"[id=$id] onPush called when we already have: " + nextRow)
                     }
-                    log.debug("onPush inner buffering element, not pulling until it is taken")
+                    log.debug(s"[id=$id] onPush inner buffering element, not pulling until it is taken")
                     nextRow = OptionVal(sinkIn.grab())
                   }
                 }
 
                 override def onUpstreamFinish(): Unit =
                   if (nextRow.isDefined) {
-                    log.debug("Stream finished. Not creating next as a buffered element: {}", nextRow)
+                    log.debug(s"[id=$id] Stream finished. Not creating next as a buffered element: {}", nextRow)
                     // wait for the element to be pulled
                     subStreamFinished = true
                   } else {
-                    log.debug("Stream finished. Creating next. " + nextRow)
+                    log.debug(s"[id=$id] Stream finished. Creating next. " + nextRow)
                     next()
                   }
               })
@@ -131,7 +137,7 @@ final private[spanner] class ContinuousQuery[S, T](
               interpreter.subFusingMaterializer.materialize(graph)
               sinkIn.pull()
             case None =>
-              log.debug("Completing stage")
+              log.debug(s"[id=$id] Completing stage")
               completeStage()
           }
         }
@@ -142,7 +148,7 @@ final private[spanner] class ContinuousQuery[S, T](
       }
 
       override def onPull(): Unit = {
-        log.debug("onPull. Buffered row: {}", nextRow)
+        log.debug(s"[id=$id] onPull. Buffered row: {}", nextRow)
         nextRow match {
           case OptionVal.Some(row) =>
             pushAndUpdateState(row)
@@ -150,14 +156,14 @@ final private[spanner] class ContinuousQuery[S, T](
             if (subStreamFinished) {
               next()
             } else {
-              log.debug("onPull {} {}", sinkIn.hasBeenPulled, sinkIn.isClosed)
+              log.debug(s"[id=$id] onPull {} {}", sinkIn.hasBeenPulled, sinkIn.isClosed)
               if (!sinkIn.isClosed && !sinkIn.hasBeenPulled) {
                 sinkIn.pull()
               }
             }
           case OptionVal.None =>
             if (!subStreamFinished && !sinkIn.isClosed && !sinkIn.hasBeenPulled) {
-              log.debug("onPull and no element, pulling")
+              log.debug(s"[id=$id] onPull and no element, pulling")
               sinkIn.pull()
             }
         }

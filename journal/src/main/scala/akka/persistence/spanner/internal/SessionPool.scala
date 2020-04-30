@@ -86,7 +86,7 @@ private[spanner] object SessionPool {
               ctx.log.debug("Sessions created [{}]", sessions)
               timers.startTimerWithFixedDelay(KeepAlive, settings.sessionPool.keepAliveInterval)
               // FIXME Make configurable https://github.com/akka/akka-persistence-spanner/issues/42
-              timers.startTimerWithFixedDelay(Stats, 15.seconds)
+              timers.startTimerWithFixedDelay(Stats, 2.seconds)
               stash.unstashAll(new SessionPool(client, sessions, ctx, timers, settings.sessionPool))
             case RetrySessionCreation(when) =>
               if (when == Duration.Zero) {

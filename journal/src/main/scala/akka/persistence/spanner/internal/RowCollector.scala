@@ -4,6 +4,8 @@
 
 package akka.persistence.spanner.internal
 
+import java.util.concurrent.atomic.AtomicLong
+
 import akka.annotation.InternalApi
 import akka.event.Logging
 import akka.stream.stage._
@@ -25,11 +27,12 @@ import com.google.spanner.v1.PartialResultSet
   val out = Outlet[Seq[Value]](Logging.simpleName(this) + ".out")
 
   private val MetadataNotSeenYet = -1
+  val counter = new AtomicLong(0L)
 
   override val shape = FlowShape(in, out)
 
   override def createLogic(inheritedAttributes: Attributes): GraphStageLogic =
-    new GraphStageLogic(shape) with InHandler with OutHandler with StageLogging {
+    new TimerGraphStageLogic(shape) with InHandler with OutHandler with StageLogging {
       /* Rows can be split across several result sets but there can also be multiple
        * rows in one result set, and a combination of the two. Furthermore the split
        * of a row can happen mid field, indicated by the "chunked" flag.
@@ -38,11 +41,27 @@ import com.google.spanner.v1.PartialResultSet
       private var incompleteRow: OptionVal[Seq[Value]] = OptionVal.None
       private var incompleteChunked = false
       private var columnsPerRow: Int = MetadataNotSeenYet
+      val id = counter.incrementAndGet()
+
+      override def preStart(): Unit = {
+        import scala.concurrent.duration._
+        scheduleAtFixedRate("timer", 400.millis, 400.millis)
+      }
+
+      override protected def onTimer(timerKey: Any): Unit = {
+        log.info(
+          s"[id=$id] incomplete row {}. incomplete chunked {}. columnsPerRow {}",
+          incompleteRow,
+          incompleteChunked,
+          columnsPerRow
+        )
+        log.info(s"[id=$id] have we pulled {}. is available {}", hasBeenPulled(in), isAvailable(out))
+      }
 
       override def onPush(): Unit = {
         val currentSet = grab(in)
         log.debug(
-          "result set [{}], incompleteRows: [{}], incompleteChunked: [{}], columnsPerRow: [{}]",
+          s"[id=$id] result set [{}], incompleteRows: [{}], incompleteChunked: [{}], columnsPerRow: [{}]",
           currentSet,
           incompleteRow,
           incompleteChunked,
