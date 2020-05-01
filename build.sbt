@@ -83,6 +83,17 @@ lazy val journal = (project in file("journal"))
     libraryDependencies ++= Dependencies.journal
   )
 
+lazy val example = (project in file("example"))
+  .settings(common)
+  .settings(dontPublish)
+  .settings(
+    name := "akka-persistence-spanner-example",
+    libraryDependencies ++= Dependencies.example,
+    fork in run := false,
+    Global / cancelable := false // let ctrl-c kill sbt
+  )
+  .dependsOn(journal)
+
 lazy val docs = project
   .in(file("docs"))
   .enablePlugins(AkkaParadoxPlugin, ParadoxSitePlugin, PublishRsyncPlugin)
