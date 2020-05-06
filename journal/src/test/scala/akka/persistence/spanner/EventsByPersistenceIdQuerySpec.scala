@@ -127,11 +127,13 @@ class EventsByPersistenceIdQuerySpec extends SpannerSpec {
 
       val events2 = (21 to 40) map { i =>
         val payload = s"e-$i"
+        // make the live query can deliver an element it picks up so it can end its query and give up the sesion
+        sub.request(1)
         persister ! PersistMe(payload, probe.ref)
         probe.expectMessage(Done)
         payload
       }
-      sub.request(21)
+      sub.request(1)
       sub.expectNextN(events2)
 
       sub.expectNoMessage()
