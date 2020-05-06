@@ -12,10 +12,14 @@ import akka.util.JavaDurationConverters._
 object LoadGenerator {
   object Settings {
     def apply(config: Config): Settings =
-      Settings(config.getInt("persistence-ids"), config.getDuration("load-tick-duration").asScala)
+      Settings(
+        config.getInt("persistence-ids"),
+        config.getDuration("load-tick-duration").asScala,
+        config.getInt("events-per-tick")
+      )
   }
 
-  case class Settings(nrPersistenceIds: Int, tickDuration: FiniteDuration)
+  case class Settings(nrPersistenceIds: Int, tickDuration: FiniteDuration, eventsPerTick: Int)
 
   sealed trait Command
   final case class Start(duration: FiniteDuration) extends Command
@@ -33,10 +37,12 @@ object LoadGenerator {
             Behaviors.same
           case Tick() =>
             ctx.log.info("Sending event")
-            ref ! ShardingEnvelope(
-              s"p${Random.nextInt(settings.nrPersistenceIds)}",
-              ConfigurablePersistentActor.Event()
-            )
+            for (_ <- 0 to settings.eventsPerTick) {
+              ref ! ShardingEnvelope(
+                s"p${Random.nextInt(settings.nrPersistenceIds)}",
+                ConfigurablePersistentActor.Event()
+              )
+            }
             Behaviors.same
           case Stop =>
             Behaviors.same

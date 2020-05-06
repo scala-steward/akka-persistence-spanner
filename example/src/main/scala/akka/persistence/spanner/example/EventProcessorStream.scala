@@ -3,7 +3,7 @@ package akka.persistence.spanner.example
 import akka.actor.typed.ActorSystem
 import akka.actor.typed.scaladsl.LoggerOps
 import akka.dispatch.ExecutionContexts
-import akka.persistence.query.{NoOffset, Offset, PersistenceQuery}
+import akka.persistence.query.{EventEnvelope, NoOffset, Offset, PersistenceQuery}
 import akka.persistence.spanner.SpannerOffset
 import akka.persistence.spanner.internal.SpannerGrpcClientExtension
 import akka.persistence.spanner.scaladsl.SpannerReadJournal
@@ -95,26 +95,45 @@ class EventProcessorStream[Event: ClassTag](
       .runWith(Sink.ignore)
 
   private def processEventsByTag(offset: Offset, histogram: Histogram): Source[Offset, NotUsed] =
-    query.eventsByTag(tag, offset).mapAsync(1) { eventEnvelope =>
-      eventEnvelope.event match {
-        case event: Event => {
-          // Times from different nodes, take with a pinch of salt
-          val latency = System.currentTimeMillis() - eventEnvelope.timestamp
-          histogram.recordValue(latency)
-          log.debugN(
-            "Tag {} Event {} persistenceId {}, sequenceNr {}. Latency {}",
-            tag,
-            event,
-            PersistenceId.ofUniqueId(eventEnvelope.persistenceId),
-            eventEnvelope.sequenceNr,
-            latency
-          )
-          Future.successful(Done)
-        }.map(_ => eventEnvelope.offset)
-        case other =>
-          Future.failed(new IllegalArgumentException(s"Unexpected event [${other.getClass.getName}]"))
+    query
+      .eventsByTag(tag, offset)
+      .statefulMapConcat(() => {
+        val previous = new scala.collection.mutable.HashMap[String, EventEnvelope]
+        ee => {
+          previous.get(ee.persistenceId) match {
+            case None => // first time seeing this pid
+            case Some(prev) => {
+              if (prev.sequenceNr != ee.sequenceNr - 1) {
+                log.errorN("Out or order sequence nr. Previous {}. Current {}", prev, ee)
+              }
+            }
+          }
+          previous.put(ee.persistenceId, ee)
+          List(ee)
+        }
+      })
+      .mapAsync(1) { eventEnvelope =>
+        eventEnvelope.event match {
+          case event: Event => {
+            // Times from different nodes, take with a pinch of salt
+            val latency = System.currentTimeMillis() - eventEnvelope.timestamp
+            if (latency < histogram.getMaxValue) {
+              histogram.recordValue(latency)
+            }
+            log.debugN(
+              "Tag {} Event {} persistenceId {}, sequenceNr {}. Latency {}",
+              tag,
+              event,
+              eventEnvelope.persistenceId,
+              eventEnvelope.sequenceNr,
+              latency
+            )
+            Future.successful(Done)
+          }.map(_ => eventEnvelope.offset)
+          case other =>
+            Future.failed(new IllegalArgumentException(s"Unexpected event [${other.getClass.getName}]"))
+        }
       }
-    }
 
   private def readOffset(): Future[Offset] =
     grpcClient

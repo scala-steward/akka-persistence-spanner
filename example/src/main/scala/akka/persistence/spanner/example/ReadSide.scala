@@ -54,7 +54,7 @@ object ReadSide {
         val tags = (start to end).map(i => s"tag-$i")
         ctx.log.info("Processor {} processing tags {}", nr, tags)
         // milliseconds, highest value = 1 minute
-        val histogram = new Histogram(10 * 1000 * 60, 2)
+        val histogram = new Histogram(100000 * 60, 2)
         // maybe easier to just have these as different actors
         // my thinking is we can start with a large number of tags and scale out
         // read side processors later
@@ -84,6 +84,8 @@ object ReadSide {
                   )
                 )
                 histogram.reset()
+              } else {
+                ctx.log.info("No new measurements")
               }
               Behaviors.same
           }
