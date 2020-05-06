@@ -6,6 +6,8 @@ package akka.persistence.spanner.internal
 
 import java.util.concurrent.ConcurrentHashMap
 
+import akka.Done
+import akka.actor.CoordinatedShutdown
 import akka.actor.typed.{ActorSystem, Extension, ExtensionId}
 import akka.annotation.InternalApi
 import akka.grpc.GrpcClientSettings
@@ -15,7 +17,8 @@ import com.google.spanner.v1.SpannerClient
 import io.grpc.auth.MoreCallCredentials
 import akka.actor.typed.scaladsl.adapter._
 
-import scala.concurrent.ExecutionContext
+import scala.concurrent.{ExecutionContext, Future}
+import akka.util.ccompat.JavaConverters._
 
 private[spanner] object SpannerGrpcClientExtension extends ExtensionId[SpannerGrpcClientExtension] {
   override def createExtension(system: ActorSystem[_]): SpannerGrpcClientExtension =
@@ -30,6 +33,10 @@ private[spanner] class SpannerGrpcClientExtension(system: ActorSystem[_]) extend
   private val sessions = new ConcurrentHashMap[String, SpannerGrpcClient]
   private implicit val classic = system.toClassic
   private implicit val ec: ExecutionContext = system.executionContext
+
+  CoordinatedShutdown(system.toClassic).addTask("service-requests-done", "shutdown-grpc-clients") { () =>
+    Future.traverse(sessions.values().asScala)(_.shutdown()).map(_ => Done)
+  }
 
   def clientFor(configLocation: String): SpannerGrpcClient =
     sessions.computeIfAbsent(

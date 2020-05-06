@@ -25,7 +25,7 @@ import io.grpc.StatusRuntimeException
 import org.slf4j.LoggerFactory
 import akka.actor.typed.scaladsl.LoggerOps
 
-import scala.concurrent.{Future, TimeoutException}
+import scala.concurrent.{Future, Promise, TimeoutException}
 import scala.util.control.NoStackTrace
 import scala.util.{Failure, Success}
 
@@ -37,9 +37,11 @@ private[spanner] object SpannerGrpcClient {
   final class TransactionFailed(code: Int, message: String, details: Any)
       extends RuntimeException(s"Code $code. Message: $message. Params: $details")
 
-  final class PoolBusyException extends RuntimeException("") with NoStackTrace
+  final class PoolBusyException extends RuntimeException("Session pool busy") with NoStackTrace
+  final class PoolShuttingException extends RuntimeException("Session pool shutting down") with NoStackTrace
 
   val PoolBusyException = new PoolBusyException
+  val PoolShuttingDownException = new PoolShuttingException
 
   private val sessionIdCounter = new AtomicLong(0)
 
@@ -197,6 +199,15 @@ private[spanner] object SpannerGrpcClient {
     releaseSessionOnComplete(result, sessionId)
   }
 
+  /**
+   * So far only done on ActorSystem shutdown.
+   */
+  def shutdown(): Future[Done] = {
+    val done = Promise[Done]
+    pool ! Shutdown(done)
+    done.future
+  }
+
   private def releaseSessionOnComplete[T](f: Future[T], sessionId: Long): Future[T] = {
     f.onComplete {
       case Success(_) =>
@@ -244,6 +255,7 @@ private[spanner] object SpannerGrpcClient {
           log.trace("Acquired session [{}]", pt.id)
           Success(pt)
         case Success(PoolBusy(_)) => Failure(PoolBusyException)
+        case Success(PoolShuttingDown(_)) => Failure(PoolShuttingDownException)
         case Failure(t) => Failure(t)
       }(ExecutionContexts.parasitic)
   }

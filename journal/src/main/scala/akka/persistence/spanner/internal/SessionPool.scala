@@ -4,6 +4,7 @@
 
 package akka.persistence.spanner.internal
 
+import akka.Done
 import akka.actor.typed.scaladsl.{AbstractBehavior, ActorContext, Behaviors, TimerScheduler}
 import akka.actor.typed.{ActorRef, Behavior, PostStop, PreRestart, Signal}
 import akka.actor.typed.scaladsl.LoggerOps
@@ -16,6 +17,7 @@ import io.grpc.StatusRuntimeException
 import org.slf4j.LoggerFactory
 
 import scala.collection.mutable
+import scala.concurrent.Promise
 import scala.concurrent.duration._
 import scala.util.{Failure, Success}
 
@@ -36,7 +38,8 @@ private[spanner] object SessionPool {
   sealed trait Command
   final case class GetSession(replyTo: ActorRef[Response], id: Long) extends Command
   final case class ReleaseSession(id: Long, recreate: Boolean) extends Command
-
+  final case class Shutdown(done: Promise[Done]) extends Command
+  private final case object ShutdownTimeout extends Command
   private final case class InitialSessions(sessions: List[Session]) extends Command
   private final case class RetrySessionCreation(in: FiniteDuration) extends Command
   private final case object CreateSingleSession extends Command
@@ -50,6 +53,7 @@ private[spanner] object SessionPool {
   }
   final case class PooledSession(session: Session, id: Long) extends Response
   final case class PoolBusy(id: Long) extends Response
+  final case class PoolShuttingDown(id: Long) extends Response
 
   private final case class SessionKeepAliveSuccess(session: Session) extends Command
   private final case class SessionKeepAliveFailure(session: Session, cause: Throwable) extends Command
@@ -85,7 +89,7 @@ private[spanner] object SessionPool {
 
           createSessions()
 
-          Behaviors.receiveMessagePartial {
+          Behaviors.receiveMessage {
             case InitialSessions(sessions) =>
               ctx.log.debug("Sessions created [{}]", sessions)
               timers.startTimerWithFixedDelay(KeepAlive, settings.sessionPool.keepAliveInterval)
@@ -109,9 +113,55 @@ private[spanner] object SessionPool {
                 stash.stash(gt)
               }
               Behaviors.same
+            case other =>
+              stash.stash(other)
+              Behaviors.same
           }
         }
       }
+    }
+
+  def shuttingDown(
+      done: Promise[Done],
+      client: SpannerClient,
+      idleSessions: List[Session],
+      remainingSessions: Map[Long, Session]
+  ): Behavior[Command] =
+    Behaviors.setup { ctx =>
+      Behaviors.receiveMessagePartial {
+        case GetSession(replyTo, id) =>
+          replyTo ! PoolShuttingDown(id)
+          Behaviors.same
+        case ReleaseSession(id, _) =>
+          val newSessions = remainingSessions.get(id).toList ++ idleSessions
+          val newRemaining = remainingSessions - id
+          if (newRemaining.isEmpty) {
+            if (ctx.log.isInfoEnabled) {
+              ctx.log.info("All sessions returned. Shutting down. {}", newSessions.map(_.name))
+            }
+            Behaviors.stopped(() => {
+              cleanupOldSessions(client, newSessions)
+              done.tryComplete(Success(Done))
+            })
+          } else {
+            ctx.log.info("Still waiting on sessions to return: {}", newRemaining.keys)
+            shuttingDown(done, client, newSessions, newRemaining)
+          }
+        case ShutdownTimeout =>
+          val toShutdown = idleSessions ++ remainingSessions.values
+          if (ctx.log.isInfoEnabled) {
+            ctx.log.info("Timed out waiting for sessions to be returned. Shutting down now. {}", toShutdown.map(_.name))
+          }
+          Behaviors.stopped(() => {
+            cleanupOldSessions(client, toShutdown)
+            done.tryComplete(Success(Done))
+          })
+      }
+    }
+
+  private def cleanupOldSessions(client: SpannerClient, sessions: Seq[Session]): Unit =
+    sessions.foreach { session =>
+      client.deleteSession(DeleteSessionRequest(session.name))
     }
 }
 
@@ -257,11 +307,6 @@ private[spanner] final class SessionPool(
       timers.startSingleTimer(CreateSingleSession, settings.sessionPool.retryCreateInterval)
       this
 
-    case SessionCreateFailed(t) =>
-      log.warn("Failed to create replacement session. It will be retried.", t)
-      timers.startSingleTimer(CreateSingleSession, settings.sessionPool.retryCreateInterval)
-      this
-
     case Stats =>
       statsLogger.debugN(
         "Sessions inUse {}. Sessions available {}. Uss since last stats: {}. Ids {}. Request queue size {}",
@@ -274,6 +319,12 @@ private[spanner] final class SessionPool(
       uses = 0
       this
 
+    case Shutdown(done) =>
+      timers.cancel(KeepAlive)
+      timers.cancel(Stats)
+      timers.startSingleTimer(ShutdownTimeout, settings.sessionPool.shutdownTimeout)
+      SessionPool.shuttingDown(done, client, availableSessions.toList.map(_.session), inUseSessions)
+
     case other =>
       log.error("Unexpected message in active state [{}]", other.getClass)
       this
@@ -281,10 +332,10 @@ private[spanner] final class SessionPool(
 
   override def onSignal: PartialFunction[Signal, Behavior[Command]] = {
     case PostStop =>
-      cleanupOldSessions()
+      cleanupOldSessions(client, availableSessions.map(_.session).toList ++ inUseSessions.values)
       Behaviors.same
     case PreRestart =>
-      cleanupOldSessions()
+      cleanupOldSessions(client, availableSessions.map(_.session).toList ++ inUseSessions.values)
       Behaviors.same
   }
 
@@ -300,9 +351,4 @@ private[spanner] final class SessionPool(
     requestor ! PooledSession(next.session, sessionId)
     inUseSessions += (sessionId -> next.session)
   }
-
-  private def cleanupOldSessions(): Unit =
-    (availableSessions.map(_.session) ++ inUseSessions.values).foreach { session =>
-      client.deleteSession(DeleteSessionRequest(session.name))
-    }
 }

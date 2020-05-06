@@ -33,6 +33,7 @@ private[spanner] object SpannerSettings {
     }
 
     val statsLogger = config.getString("stats-logger")
+    val shutdownTimeout = config.getDuration("shutdown-timeout").asScala
   }
 }
 

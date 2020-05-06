@@ -4,10 +4,19 @@
 
 package akka.persistence.spanner.internal
 
+import akka.Done
 import akka.actor.testkit.typed.TestException
 import akka.actor.testkit.typed.scaladsl.{LogCapturing, ScalaTestWithActorTestKit, TestProbe}
 import akka.persistence.spanner.SpannerSettings
-import akka.persistence.spanner.internal.SessionPool.{GetSession, PoolBusy, PooledSession, ReleaseSession, Response}
+import akka.persistence.spanner.internal.SessionPool.{
+  GetSession,
+  PoolBusy,
+  PoolShuttingDown,
+  PooledSession,
+  ReleaseSession,
+  Response,
+  Shutdown
+}
 import akka.persistence.spanner.internal.SessionPoolStubbedSpec.{
   BatchSessionCreateInvocation,
   CreateSessionInvocation,
@@ -77,13 +86,14 @@ class SessionPoolStubbedSpec
     with Matchers
     with AnyWordSpecLike
     with LogCapturing {
-  class Setup(nrSessions: Int = 2) {
+  class Setup(nrSessions: Int = 2, outstandingRequest: Int = 1) {
     val settings = new SpannerSettings(ConfigFactory.parseString(s"""
          session-pool {
            max-size = $nrSessions
            retry-create-interval = 500ms
-           max-outstanding-requests = 1
+           max-outstanding-requests = $outstandingRequest
            keep-alive-interval = 1s
+           shutdown-timeout = 1s
          }
       """).withFallback(ConfigFactory.load().getConfig("akka.persistence.spanner")))
     val probe = testKit.createTestProbe[Invocation]()
@@ -299,6 +309,43 @@ class SessionPoolStubbedSpec
       newSessionRequest.response.complete(Success(newSession))
 
       sessionProbe.expectMessageType[PooledSession].session shouldEqual newSession
+    }
+  }
+
+  "Shutting down" should {
+    "reject requests" in new Setup {
+      expectBatchCreate()
+      pool ! Shutdown(Promise[Done])
+      pool ! GetSession(sessionProbe.ref, id1)
+      sessionProbe.expectMessage(PoolShuttingDown(id1))
+    }
+
+    "shutdown once all sessions have been returned" in new Setup {
+      expectBatchCreate()
+      pool ! GetSession(sessionProbe.ref, id1)
+      sessionProbe.expectMessageType[PooledSession]
+      pool ! Shutdown(Promise[Done])
+      // pool should not shutdown yet
+      pool ! GetSession(sessionProbe.ref, id2)
+      sessionProbe.expectMessage(PoolShuttingDown(id2))
+      pool ! ReleaseSession(id1, recreate = false)
+      sessions.map { _ =>
+        probe.expectMessageType[DeleteSessionInvocation].input.name
+      }.toSet shouldEqual sessions.map(_.name).toSet
+      probe.expectTerminated(pool)
+    }
+
+    "timeout and delete sessions" in new Setup(nrSessions = 2) {
+      expectBatchCreate()
+      pool ! GetSession(sessionProbe.ref, id1)
+      sessionProbe.expectMessageType[PooledSession]
+      // don't give the session back
+      pool ! Shutdown(Promise[Done])
+      sessions.map { _ =>
+        probe.expectMessageType[DeleteSessionInvocation].input.name
+      }.toSet shouldEqual sessions.map(_.name).toSet
+
+      probe.expectTerminated(pool)
     }
   }
 }

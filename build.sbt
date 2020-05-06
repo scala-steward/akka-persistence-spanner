@@ -2,7 +2,6 @@ import sbt.Keys.parallelExecution
 
 inThisBuild(
   Seq(
-    scalaVersion := "2.13.1",
     organization := "com.lightbend.akka",
     organizationName := "Lightbend Inc.",
     homepage := Some(url("https://doc.akka.io/docs/akka-persistence-spanner/current")),
