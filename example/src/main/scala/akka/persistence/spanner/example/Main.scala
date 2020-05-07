@@ -12,10 +12,9 @@ import akka.persistence.spanner.internal.{ SpannerJournalInteractions, SpannerSn
 import com.google.auth.oauth2.GoogleCredentials
 import com.google.spanner.admin.database.v1.{ CreateDatabaseRequest, DatabaseAdminClient }
 import com.google.spanner.admin.instance.v1.{ CreateInstanceRequest, InstanceAdminClient }
-import com.google.spanner.v1.SpannerClient
 import io.grpc.auth.MoreCallCredentials
 
-import scala.concurrent.{ Await, Future }
+import scala.concurrent.Future
 import scala.concurrent.duration._
 
 object Main {
@@ -24,10 +23,8 @@ object Main {
       ctx =>
         val cluster = Cluster(ctx.system)
         ctx.log.info("Starting up example")
-        if (cluster.selfMember.hasRole("read")) {
-          // FIXME create offset store
-        }
         if (cluster.selfMember.hasRole("write")) {
+          // note: this creates offset store as well
           ctx.pipeToSelf(initSpannerInstance(ctx.system))(identity)
         }
 

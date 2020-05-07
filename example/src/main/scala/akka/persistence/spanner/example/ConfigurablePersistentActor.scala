@@ -1,11 +1,11 @@
 package akka.persistence.spanner.example
 
 import akka.actor.typed.scaladsl.Behaviors
-import akka.actor.typed.{ActorRef, ActorSystem, Behavior}
+import akka.actor.typed.{ ActorRef, ActorSystem, Behavior }
 import akka.cluster.sharding.typed.ShardingEnvelope
-import akka.cluster.sharding.typed.scaladsl.{ClusterSharding, Entity, EntityTypeKey}
+import akka.cluster.sharding.typed.scaladsl.{ ClusterSharding, Entity, EntityTypeKey }
 import akka.persistence.typed.PersistenceId
-import akka.persistence.typed.scaladsl.{Effect, EventSourcedBehavior}
+import akka.persistence.typed.scaladsl.{ Effect, EventSourcedBehavior }
 
 object ConfigurablePersistentActor {
   case class Settings(nrTags: Int)
@@ -19,7 +19,9 @@ object ConfigurablePersistentActor {
 
   final case class State(eventsProcessed: Long) extends CborSerializable
 
-  def apply(settings: Settings, persistenceId: String): Behavior[Event] =
+  def apply(settings: Settings, persistenceId: String): Behavior[Event] = {
+    // use pid hash to get all events for an actor in the same tag
+    val tags = Set("tag-" + math.abs(persistenceId.hashCode() % settings.nrTags))
     Behaviors.setup { ctx =>
       EventSourcedBehavior[Event, Event, State](
         persistenceId = PersistenceId.ofUniqueId(persistenceId),
@@ -28,7 +30,7 @@ object ConfigurablePersistentActor {
           ctx.log.info("persisting event {}", event)
           Effect.persist(event)
         },
-        (state, _) => state.copy(eventsProcessed = state.eventsProcessed + 1)
-      ).withTagger(event => Set("tag-" + math.abs(event.hashCode() % settings.nrTags)))
+        (state, _) => state.copy(eventsProcessed = state.eventsProcessed + 1)).withTagger(_ => tags)
     }
+  }
 }
