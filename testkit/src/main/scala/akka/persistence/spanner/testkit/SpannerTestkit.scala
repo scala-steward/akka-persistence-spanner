@@ -1,3 +1,7 @@
+/*
+ * Copyright (C) 2020 Lightbend Inc. <http://www.lightbend.com>
+ */
+
 package akka.persistence.spanner.testkit
 
 import akka.actor.ClassicActorSystemProvider
@@ -16,7 +20,7 @@ import scala.concurrent.{Await, ExecutionContext}
 
 private object SpannerTestkit {
   private var instanceCreated = false
-  def ensureInstanceCreated(
+  private def ensureInstanceCreated(
       client: InstanceAdminClient,
       spannerSettings: SpannerSettings,
       testkitSettings: SpannerTestkit.Settings
@@ -86,7 +90,7 @@ final class SpannerTestkit(systemProvider: ClassicActorSystemProvider) {
    * if the database is shared.
    */
   def createDatabaseAndSchema(): Unit = {
-    SpannerTestkit.ensureInstanceCreated(instanceClient, spannerSettings)
+    SpannerTestkit.ensureInstanceCreated(instanceClient, spannerSettings, testkitSettings)
     Await.result(
       adminClient
         .createDatabase(

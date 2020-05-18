@@ -14,7 +14,7 @@ public class SpannerTestkitTest {
   public static final TestKitJunitResource testKit =
       new TestKitJunitResource(SpannerTestkitSpec.config());
 
-  //#setup
+  // #setup
   public static final SpannerTestkit spannerTestkit = new SpannerTestkit(testKit.system());
 
   @BeforeClass
@@ -26,7 +26,7 @@ public class SpannerTestkitTest {
   public static void dropDatabase() {
     spannerTestkit.dropDatabase();
   }
-  //#setup
+  // #setup
 
   @Test
   public void shouldHaveCreatedTheDatabase() {

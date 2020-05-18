@@ -45,11 +45,15 @@ class SpannerTestkitSpec
   //#setup
   val spannerTestkit = new SpannerTestkit(system)
 
-  override protected def beforeAll(): Unit =
+  override protected def beforeAll(): Unit = {
+    super.beforeAll()
     spannerTestkit.createDatabaseAndSchema()
+  }
 
-  protected override def afterAll(): Unit =
+  protected override def afterAll(): Unit = {
+    super.afterAll()
     spannerTestkit.dropDatabase()
+  }
   //#setup
 
   "SpannerTestkit" should {
