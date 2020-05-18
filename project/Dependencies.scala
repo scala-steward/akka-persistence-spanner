@@ -16,7 +16,7 @@ object Dependencies {
 
   val SpannerVersion = "1.52.0"
   // Keep in sync with Akka gRPC
-  val GrpcVersion = "1.28.0"
+  val GrpcVersion = "1.29.0"
   val GoogleAuthVersion = "0.20.0"
 
   object Compile {
