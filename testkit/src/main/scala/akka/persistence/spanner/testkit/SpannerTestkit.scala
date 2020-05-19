@@ -112,7 +112,7 @@ final class SpannerTestkit(systemProvider: ClassicActorSystemProvider) {
    * Drops the configured database.
    */
   def dropDatabase(): Unit =
-    Await.ready(
+    Await.result(
       adminClient.dropDatabase(DropDatabaseRequest(spannerSettings.fullyQualifiedDatabase)),
       testkitSettings.operationTimeout
     )
