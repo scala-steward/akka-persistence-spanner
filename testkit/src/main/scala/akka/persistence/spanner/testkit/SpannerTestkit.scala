@@ -103,7 +103,10 @@ final class SpannerTestkit(systemProvider: ClassicActorSystemProvider) {
             SpannerJournalInteractions.Schema.Deleted.deleteMetadataTable(spannerSettings) ::
             SpannerSnapshotInteractions.Schema.Snapshots.snapshotTable(spannerSettings) :: Nil
           )
-        ),
+        )
+        .recover {
+          case t if t.getMessage.contains("ALREADY_EXISTS") =>
+        },
       testkitSettings.operationTimeout
     )
   }

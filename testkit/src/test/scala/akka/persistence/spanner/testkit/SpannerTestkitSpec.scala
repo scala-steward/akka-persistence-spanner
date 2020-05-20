@@ -55,8 +55,8 @@ class SpannerTestkitSpec
   }
 
   protected override def afterAll(): Unit = {
-    super.afterAll()
     spannerTestkit.dropDatabase()
+    super.afterAll()
   }
   //#setup
 
