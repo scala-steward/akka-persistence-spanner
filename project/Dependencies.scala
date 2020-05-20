@@ -97,4 +97,12 @@ object Dependencies {
     Compile.akkaHttpSprayJson,
     Compile.hdrHistogram
   )
+
+  val testkit = Seq(
+    scalaTest,
+    akkaTestkit,
+    TestDeps.logback,
+    TestDeps.junit,
+    TestDeps.junitInterface
+  )
 }

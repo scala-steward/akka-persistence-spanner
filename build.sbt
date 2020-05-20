@@ -69,7 +69,7 @@ lazy val root = (project in file("."))
     name := "akka-persistence-spanner-root",
     publishTo := Some(Resolver.file("Unused transient repository", file("target/unusedrepo")))
   )
-  .aggregate(journal)
+  .aggregate(journal, testkit)
 
 lazy val dumpSchema = taskKey[Unit]("Dumps schema for docs")
 dumpSchema := (journal / runMain in (Test)).toTask(" akka.persistence.spanner.PrintSchema").value
@@ -98,6 +98,14 @@ lazy val journal = (project in file("journal"))
             suffixFileFilter("google/protobuf/type.proto") ||
             suffixFileFilter("google/protobuf/wrappers.proto")
         )
+  )
+
+lazy val testkit = (project in file("testkit"))
+  .settings(common)
+  .dependsOn(journal)
+  .settings(
+    name := "akka-persistence-spanner-testkit",
+    libraryDependencies ++= Dependencies.testkit
   )
 
 lazy val example = (project in file("example"))
