@@ -8,7 +8,7 @@ object Dependencies {
   val Scala212 = "2.12.11"
   val Scala213 = "2.13.1"
 
-  val AkkaVersion = System.getProperty("override.akka.version", "2.6.4")
+  val AkkaVersion = System.getProperty("override.akka.version", "2.6.6")
   val AkkaVersionInDocs = AkkaVersion.take(3)
   // for example
   val AkkaHttpVersion = "10.1.11"
@@ -16,7 +16,7 @@ object Dependencies {
 
   val SpannerVersion = "1.52.0"
   // Keep in sync with Akka gRPC
-  val GrpcVersion = "1.29.0"
+  val GrpcVersion = "1.30.2"
   val GoogleAuthVersion = "0.20.0"
 
   object Compile {
