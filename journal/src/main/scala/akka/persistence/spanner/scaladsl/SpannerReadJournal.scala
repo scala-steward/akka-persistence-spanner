@@ -8,6 +8,7 @@ import akka.NotUsed
 import akka.actor.ExtendedActorSystem
 import akka.actor.typed.scaladsl.LoggerOps
 import akka.actor.typed.scaladsl.adapter._
+import akka.persistence.PersistentRepr
 import akka.persistence.query.scaladsl._
 import akka.persistence.query.{EventEnvelope, NoOffset, Offset}
 import akka.persistence.spanner.internal.SpannerJournalInteractions.Schema
@@ -138,7 +139,7 @@ final class SpannerReadJournal(system: ExtendedActorSystem, config: Config, cfgP
       toSequenceNr: Long
   ): Source[EventEnvelope, NotUsed] =
     ContinuousQuery[Long, EventEnvelope](
-      fromSequenceNr,
+      fromSequenceNr - 1, // we always add 1 back below before querying
       (_, ee) => ee.sequenceNr,
       currentSequenceNr => {
         if (currentSequenceNr == toSequenceNr) {
@@ -182,7 +183,21 @@ final class SpannerReadJournal(system: ExtendedActorSystem, config: Config, cfgP
     var currentTimestamp: String = spannerOffset.commitTimestamp
     var currentSequenceNrs: Map[String, Long] = spannerOffset.seen
     row => {
-      val (pr, commitTimestamp) = Schema.Journal.deserializeRow(serialization, row)
+      def prToEnvelope(offset: SpannerOffset, pr: PersistentRepr): EventEnvelope = {
+        val envelope = EventEnvelope(
+          offset,
+          pr.persistenceId,
+          pr.sequenceNr,
+          pr.payload,
+          pr.timestamp
+        )
+        pr.metadata match {
+          case Some(meta) => envelope.withMetadata(meta)
+          case None => envelope
+        }
+      }
+
+      val (pr, commitTimestamp) = Schema.Journal.deserializeRow(settings, serialization, row)
       if (commitTimestamp == currentTimestamp) {
         // has this already been seen?
         if (currentSequenceNrs.get(pr.persistenceId).exists(_ >= pr.sequenceNr)) {
@@ -195,29 +210,15 @@ final class SpannerReadJournal(system: ExtendedActorSystem, config: Config, cfgP
           Nil
         } else {
           currentSequenceNrs = currentSequenceNrs.updated(pr.persistenceId, pr.sequenceNr)
-          List(
-            EventEnvelope(
-              SpannerOffset(commitTimestamp, currentSequenceNrs),
-              pr.persistenceId,
-              pr.sequenceNr,
-              pr.payload,
-              pr.timestamp
-            )
-          )
+          val offset = SpannerOffset(commitTimestamp, currentSequenceNrs)
+          prToEnvelope(offset, pr) :: Nil
         }
       } else {
         // ne timestamp, reset currentSequenceNrs
         currentTimestamp = commitTimestamp
         currentSequenceNrs = Map(pr.persistenceId -> pr.sequenceNr)
-        List(
-          EventEnvelope(
-            SpannerOffset(commitTimestamp, currentSequenceNrs),
-            pr.persistenceId,
-            pr.sequenceNr,
-            pr.payload,
-            pr.timestamp
-          )
-        )
+        val offset = SpannerOffset(commitTimestamp, currentSequenceNrs)
+        prToEnvelope(offset, pr) :: Nil
       }
     }
   }
