@@ -25,6 +25,10 @@ import scala.collection.immutable
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success, Try}
 
+/**
+ * INTERNAL API
+ */
+@InternalApi
 object SpannerJournal {
   case class WriteFinished(persistenceId: String, done: Future[_])
 }
@@ -110,8 +114,12 @@ final class SpannerJournal(config: Config, cfgPath: String) extends AsyncWriteJo
       }
     }
 
+    val persistenceId = messages.head.persistenceId
     val write = Future.sequence(messages.map(aw => atomicWrite(aw)))
-    writesInProgress.put(messages.head.persistenceId, write)
+    writesInProgress.put(persistenceId, write)
+    write.onComplete { _ =>
+      context.self ! WriteFinished(persistenceId, write)
+    }
     write
   }
 
@@ -133,7 +141,8 @@ final class SpannerJournal(config: Config, cfgPath: String) extends AsyncWriteJo
     val pendingWrite = Option(writesInProgress.get(persistenceId)) match {
       case Some(f) =>
         log.debug("Write in progress for {}, deferring highest seq nr until write completed", persistenceId)
-        f
+        // we only want to make write - replay sequential, not fail if previous write failed
+        f.recover { case _ => Done }(ExecutionContexts.parasitic)
       case None => Future.successful(Done)
     }
     pendingWrite.flatMap(_ => spannerInteractions.readHighestSequenceNr(persistenceId, fromSequenceNr))
