@@ -49,7 +49,7 @@ def common: Seq[Setting[_]] = Seq(
     ),
   headerLicense := Some(
       HeaderLicense.Custom(
-        """Copyright (C) 2020 Lightbend Inc. <http://www.lightbend.com>"""
+        """Copyright (C) 2021 Lightbend Inc. <http://www.lightbend.com>"""
       )
     ),
   logBuffered in Test := System.getProperty("akka.logBufferedTests", "false").toBoolean,

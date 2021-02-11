@@ -1,6 +1,7 @@
 /*
- * Copyright (C) 2020 Lightbend Inc. <https://www.lightbend.com>
+ * Copyright (C) 2021 Lightbend Inc. <http://www.lightbend.com>
  */
+
 package akka.persistence.spanner.internal
 
 import akka.actor.ExtendedActorSystem
