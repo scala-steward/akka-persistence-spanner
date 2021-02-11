@@ -27,6 +27,7 @@ private[spanner] object SpannerObjectInteractions {
         s"""CREATE TABLE ${settings.objectTable} (
            |  key STRING(MAX) NOT NULL,
            |  value BYTES(MAX),
+           |  ser_id INT64 NOT NULL,
            |  ser_manifest STRING(MAX) NOT NULL,
            |  write_time TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp=true),
            |) PRIMARY KEY (key)""".stripMargin
@@ -34,13 +35,13 @@ private[spanner] object SpannerObjectInteractions {
       // TODO should we split the key into a persistenceId and an entityId?
       val Key = "key" -> TypeCode.STRING
       val Value = "value" -> TypeCode.BYTES
-      // TODO should we use a ser_id to hook into Akka Serialization nicer?
+      val SerId = "ser_id" -> TypeCode.INT64
       val SerManifest = "ser_manifest" -> TypeCode.STRING
       val WriteTime = "write_time" -> TypeCode.TIMESTAMP
       // TODO consider adding a writerUUID like for eventsourced events?
       // val WriterUUID = "writer_uuid" -> Type(TypeCode.STRING)
 
-      val Columns = List(Key, SerManifest, Value, WriteTime)
+      val Columns = List(Key, SerId, SerManifest, Value, WriteTime)
     }
   }
 }
@@ -61,12 +62,12 @@ private[spanner] final class SpannerObjectInteractions(
 ) {
   import SpannerObjectInteractions.Schema.Objects
 
-  def upsertObject(key: String, manifest: String, value: ByteString): Future[Unit] =
+  def upsertObject(key: String, serId: Long, serManifest: String, value: ByteString): Future[Unit] =
     spannerGrpcClient.withSession(session => {
-      spannerGrpcClient.write(Seq(Mutation(upsertObjectOperation(key, manifest, value))))(session)
+      spannerGrpcClient.write(Seq(Mutation(upsertObjectOperation(key, serId, serManifest, value))))(session)
     })
 
-  // TODO maybe return timestamp and other metadata?
+  // TODO maybe return timestamp, definitely serialization id and manifest
   def getObject(key: String): Future[ByteString] =
     spannerGrpcClient
       .withSession(
@@ -113,14 +114,20 @@ private[spanner] final class SpannerObjectInteractions(
 
   private object CommitTimestamp
 
-  private def upsertObjectOperation(key: String, manifest: String, value: ByteString): Mutation.Operation =
+  private def upsertObjectOperation(
+      key: String,
+      serId: Long,
+      serManifest: String,
+      value: ByteString
+  ): Mutation.Operation =
     Mutation.Operation.InsertOrUpdate(
       Mutation.Write(
         settings.objectTable,
         Objects.Columns.map(_._1),
         List(ListValue(Objects.Columns.map {
           case Objects.Key => wrapValue(Objects.Key, key)
-          case Objects.SerManifest => wrapValue(Objects.SerManifest, manifest)
+          case Objects.SerId => wrapValue(Objects.SerId, serId)
+          case Objects.SerManifest => wrapValue(Objects.SerManifest, serManifest)
           case Objects.Value => wrapValue(Objects.Value, value)
           case Objects.WriteTime => wrapValue(Objects.WriteTime, CommitTimestamp)
           case other => throw new MatchError(other)
@@ -131,6 +138,7 @@ private[spanner] final class SpannerObjectInteractions(
   private def wrapValue(column: (String, TypeCode), value: Any): Value =
     Value((column, value) match {
       case ((_, TypeCode.STRING), stringValue: String) => StringValue(stringValue)
+      case ((_, TypeCode.INT64), longValue: Long) => StringValue(longValue.toString)
       case ((_, TypeCode.BYTES), bytes: ByteString) =>
         // TODO verify why we're sending bytes as base64-encoded strings
         // there might be some spanner restriction as the API used to be json/http rather than protobuf,

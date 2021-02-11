@@ -12,15 +12,17 @@ class SpannerObjectStoreSpec extends SpannerSpec("SpannerObjectStoreSpec") {
   override def withObjectStore: Boolean = true
 
   val grpcClient = SpannerGrpcClientExtension(classicSystem.toTyped).clientFor("akka.persistence.spanner")
-  private val spannerInteractions = new SpannerObjectInteractions(
+  val spannerInteractions = new SpannerObjectInteractions(
     grpcClient,
     spannerSettings
   )
+  val serId = 5749231L
+
   "The spanner object store" should {
     "save and retrieve a value" in {
       val key = "my-key"
       val value = ByteString("Genuinely Collaborative")
-      spannerInteractions.upsertObject(key, "manifest-type-information", value).futureValue
+      spannerInteractions.upsertObject(key, serId, "manifest-type-information", value).futureValue
       spannerInteractions.getObject(key).futureValue should be(value)
     }
     "produce an error when fetching a non-existing key" in {
@@ -31,17 +33,17 @@ class SpannerObjectStoreSpec extends SpannerSpec("SpannerObjectStoreSpec") {
     "update a value" in {
       val key = "key-to-be-updated"
       val value = ByteString("Genuinely Collaborative")
-      spannerInteractions.upsertObject(key, "manifest-type-information", value).futureValue
+      spannerInteractions.upsertObject(key, serId, "manifest-type-information", value).futureValue
       spannerInteractions.getObject(key).futureValue should be(value)
 
       val updatedValue = ByteString("Open to Feedback")
-      spannerInteractions.upsertObject(key, "manifest-type-information", updatedValue).futureValue
+      spannerInteractions.upsertObject(key, serId, "manifest-type-information", updatedValue).futureValue
       spannerInteractions.getObject(key).futureValue should be(updatedValue)
     }
     "support deletions" in {
       val key = "to-be-added-and-removed"
       val value = ByteString("Genuinely Collaborative")
-      spannerInteractions.upsertObject(key, "manifest-type-information", value).futureValue
+      spannerInteractions.upsertObject(key, serId, "manifest-type-information", value).futureValue
       spannerInteractions.getObject(key).futureValue should be(value)
       spannerInteractions.deleteObject(key).futureValue
       spannerInteractions.getObject(key).failed.futureValue.getMessage should include(
