@@ -53,7 +53,7 @@ private[spanner] object SpannerObjectInteractions {
  * in future callbacks
  */
 @InternalApi
-private[spanner] final class SpannerObjectInteractions(
+final class SpannerObjectInteractions(
     spannerGrpcClient: SpannerGrpcClient,
     settings: SpannerSettings
 )(

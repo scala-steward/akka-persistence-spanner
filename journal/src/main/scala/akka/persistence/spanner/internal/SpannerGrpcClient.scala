@@ -50,7 +50,7 @@ private[spanner] object SpannerGrpcClient {
 /**
  * A thin wrapper around the gRPC client to expose only what the plugin needs.
  */
-@InternalApi private[spanner] class SpannerGrpcClient(
+@InternalApi class SpannerGrpcClient(
     name: String,
     val client: SpannerClient,
     system: ActorSystem[_],

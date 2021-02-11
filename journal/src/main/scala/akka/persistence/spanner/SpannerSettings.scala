@@ -45,7 +45,7 @@ private[spanner] final class QuerySettings(config: Config) {
  * INTERNAL API
  */
 @InternalApi
-private[spanner] final class SpannerSettings(config: Config) {
+final class SpannerSettings(config: Config) {
   val project = config.getString("project")
   val instance = config.getString("instance")
   val database = config.getString("database")

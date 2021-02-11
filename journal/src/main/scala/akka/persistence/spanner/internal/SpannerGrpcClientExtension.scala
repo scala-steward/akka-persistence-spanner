@@ -20,7 +20,7 @@ import io.grpc.auth.MoreCallCredentials
 
 import scala.concurrent.{ExecutionContext, Future}
 
-private[spanner] object SpannerGrpcClientExtension extends ExtensionId[SpannerGrpcClientExtension] {
+object SpannerGrpcClientExtension extends ExtensionId[SpannerGrpcClientExtension] {
   override def createExtension(system: ActorSystem[_]): SpannerGrpcClientExtension =
     new SpannerGrpcClientExtension(system)
 }
