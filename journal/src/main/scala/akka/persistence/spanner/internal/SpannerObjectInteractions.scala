@@ -5,7 +5,7 @@
 package akka.persistence.spanner.internal
 
 import akka.actor.ActorSystem
-import akka.annotation.InternalApi
+import akka.annotation.{InternalApi, InternalStableApi}
 import akka.persistence.spanner.SpannerSettings
 import akka.util.ByteString
 import com.google.protobuf.struct.Value.Kind.StringValue
@@ -52,7 +52,7 @@ private[spanner] object SpannerObjectInteractions {
  * Class for doing spanner interaction outside of an actor to avoid mistakes
  * in future callbacks
  */
-@InternalApi
+@InternalStableApi
 final class SpannerObjectInteractions(
     spannerGrpcClient: SpannerGrpcClient,
     settings: SpannerSettings

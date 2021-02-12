@@ -4,7 +4,7 @@
 
 package akka.persistence.spanner
 
-import akka.annotation.InternalApi
+import akka.annotation.{InternalApi, InternalStableApi}
 import akka.persistence.spanner.SpannerSettings.SessionPoolSettings
 import com.typesafe.config.Config
 import akka.util.JavaDurationConverters._
@@ -44,7 +44,7 @@ private[spanner] final class QuerySettings(config: Config) {
 /**
  * INTERNAL API
  */
-@InternalApi
+@InternalStableApi
 final class SpannerSettings(config: Config) {
   val project = config.getString("project")
   val instance = config.getString("instance")
