@@ -7,6 +7,7 @@ package akka.persistence.spanner.internal
 import akka.actor.ActorSystem
 import akka.annotation.{InternalApi, InternalStableApi}
 import akka.persistence.spanner.SpannerSettings
+import akka.persistence.spanner.internal.SpannerObjectInteractions.Result
 import akka.util.ByteString
 import com.google.protobuf.struct.Value.Kind.StringValue
 import com.google.protobuf.struct.{ListValue, Value}
@@ -20,6 +21,8 @@ import scala.concurrent.{ExecutionContext, Future}
  */
 @InternalApi
 private[spanner] object SpannerObjectInteractions {
+  case class Result(byteString: ByteString, serId: Long, serManifest: String)
+
   object Schema {
     // To back Durable Actors
     object Objects {
@@ -67,8 +70,8 @@ final class SpannerObjectInteractions(
       spannerGrpcClient.write(Seq(Mutation(upsertObjectOperation(key, serId, serManifest, value))))(session)
     })
 
-  // TODO maybe return timestamp, definitely serialization id and manifest
-  def getObject(key: String): Future[ByteString] =
+  // TODO maybe return timestamp?
+  def getObject(key: String): Future[Result] =
     spannerGrpcClient
       .withSession(
         session =>
@@ -78,7 +81,7 @@ final class SpannerObjectInteractions(
               transaction = None,
               settings.objectTable,
               index = "",
-              Seq(Objects.Value._1),
+              Seq(Objects.Value, Objects.SerId, Objects.SerManifest).map(_._1),
               wrapKey(key),
               limit = 1
             )
@@ -87,8 +90,12 @@ final class SpannerObjectInteractions(
       .map(
         resultSet =>
           resultSet.rows.headOption match {
-            case Some(row) =>
-              ByteString(row.values(0).getStringValue).decodeBase64
+            case Some(ListValue(Seq(value, serId, serManifest), _)) =>
+              Result(
+                ByteString(value.getStringValue).decodeBase64,
+                serId.getStringValue.toLong,
+                serManifest.getStringValue
+              )
             case None =>
               throw new IllegalStateException(s"No data found for key [$key]")
           }
