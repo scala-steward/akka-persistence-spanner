@@ -5,29 +5,29 @@
 package akka.persistence.spanner.internal
 
 import akka.actor.ActorSystem
-import akka.annotation.{InternalApi, InternalStableApi}
+import akka.annotation.InternalStableApi
 import akka.persistence.spanner.SpannerSettings
 import akka.persistence.spanner.internal.SpannerObjectInteractions.Result
 import akka.util.ByteString
 import com.google.protobuf.struct.Value.Kind.StringValue
 import com.google.protobuf.struct.{ListValue, Value}
 import com.google.spanner.v1.{KeySet, Mutation, ReadRequest, TypeCode}
-import org.slf4j.LoggerFactory
 
 import scala.concurrent.{ExecutionContext, Future}
 
 /**
  * INTERNAL API
  */
-@InternalApi
-private[spanner] object SpannerObjectInteractions {
+@InternalStableApi
+object SpannerObjectInteractions {
   case class Result(byteString: ByteString, serId: Long, serManifest: String)
 
   object Schema {
     // To back Durable Actors
     object Objects {
-      def objectTable(settings: SpannerSettings): String =
-        s"""CREATE TABLE ${settings.objectTable} (
+      def objectTable(settings: SpannerSettings): String = objectTable(settings.objectTable)
+      def objectTable(table: String): String =
+        s"""CREATE TABLE $table (
            |  key STRING(MAX) NOT NULL,
            |  value BYTES(MAX),
            |  ser_id INT64 NOT NULL,
