@@ -29,6 +29,13 @@ class SpannerObjectStoreSpec extends SpannerSpec("SpannerObjectStoreSpec") {
       spannerInteractions.upsertObject(key, serId, serManifest, value).futureValue
       spannerInteractions.getObject(key).futureValue should be(Result(value, serId, serManifest))
     }
+    "save and retrieve a binary value" in {
+      val key = "my-key"
+      // this is not a valid UTF-8 string:
+      val value = ByteString(Array[Byte](0xC0.toByte, 0xC1.toByte))
+      spannerInteractions.upsertObject(key, serId, serManifest, value).futureValue
+      spannerInteractions.getObject(key).futureValue should be(Result(value, serId, serManifest))
+    }
     "produce an error when fetching a non-existing key" in {
       spannerInteractions.getObject("nonexistent-key").failed.futureValue.getMessage should include(
         "No data found for key [nonexistent-key]"

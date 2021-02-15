@@ -147,9 +147,8 @@ final class SpannerObjectInteractions(
       case ((_, TypeCode.STRING), stringValue: String) => StringValue(stringValue)
       case ((_, TypeCode.INT64), longValue: Long) => StringValue(longValue.toString)
       case ((_, TypeCode.BYTES), bytes: ByteString) =>
-        // TODO verify why we're sending bytes as base64-encoded strings
-        // there might be some spanner restriction as the API used to be json/http rather than protobuf,
-        // but good to verify
+        // the protobuf struct data type doesn't have a type for binary data, so we base64-encode it
+        // https://github.com/protocolbuffers/protobuf/blob/master/src/google/protobuf/struct.proto#L62
         StringValue(bytes.encodeBase64.utf8String)
       case ((_, TypeCode.TIMESTAMP), CommitTimestamp) =>
         StringValue("spanner.commit_timestamp()")
