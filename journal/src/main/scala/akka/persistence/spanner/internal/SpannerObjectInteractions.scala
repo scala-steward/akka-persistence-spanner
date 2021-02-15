@@ -20,7 +20,7 @@ import scala.concurrent.{ExecutionContext, Future}
  */
 @InternalStableApi
 object SpannerObjectInteractions {
-  case class Result(byteString: ByteString, serId: Long, serManifest: String)
+  case class Result(byteString: ByteString, serId: Long, serManifest: String, seqNr: Long)
 
   object Schema {
     // To back Durable Actors
@@ -32,6 +32,7 @@ object SpannerObjectInteractions {
            |  value BYTES(MAX),
            |  ser_id INT64 NOT NULL,
            |  ser_manifest STRING(MAX) NOT NULL,
+           |  seq_nr INT64 NOT NULL,
            |  write_time TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp=true),
            |) PRIMARY KEY (key)""".stripMargin
 
@@ -40,11 +41,10 @@ object SpannerObjectInteractions {
       val Value = "value" -> TypeCode.BYTES
       val SerId = "ser_id" -> TypeCode.INT64
       val SerManifest = "ser_manifest" -> TypeCode.STRING
+      val SeqNr = "seq_nr" -> TypeCode.INT64
       val WriteTime = "write_time" -> TypeCode.TIMESTAMP
-      // TODO consider adding a writerUUID like for eventsourced events?
-      // val WriterUUID = "writer_uuid" -> Type(TypeCode.STRING)
 
-      val Columns = List(Key, SerId, SerManifest, Value, WriteTime)
+      val Columns = List(Key, SerId, SerManifest, Value, SeqNr, WriteTime)
     }
   }
 }
@@ -65,9 +65,9 @@ final class SpannerObjectInteractions(
 ) {
   import SpannerObjectInteractions.Schema.Objects
 
-  def upsertObject(key: String, serId: Long, serManifest: String, value: ByteString): Future[Unit] =
+  def upsertObject(key: String, serId: Long, serManifest: String, value: ByteString, seqNr: Long): Future[Unit] =
     spannerGrpcClient.withSession(session => {
-      spannerGrpcClient.write(Seq(Mutation(upsertObjectOperation(key, serId, serManifest, value))))(session)
+      spannerGrpcClient.write(Seq(Mutation(upsertObjectOperation(key, serId, serManifest, value, seqNr))))(session)
     })
 
   // TODO maybe return timestamp?
@@ -81,7 +81,7 @@ final class SpannerObjectInteractions(
               transaction = None,
               settings.objectTable,
               index = "",
-              Seq(Objects.Value, Objects.SerId, Objects.SerManifest).map(_._1),
+              Seq(Objects.Value, Objects.SerId, Objects.SerManifest, Objects.SeqNr).map(_._1),
               wrapKey(key),
               limit = 1
             )
@@ -90,11 +90,12 @@ final class SpannerObjectInteractions(
       .map(
         resultSet =>
           resultSet.rows.headOption match {
-            case Some(ListValue(Seq(value, serId, serManifest), _)) =>
+            case Some(ListValue(Seq(value, serId, serManifest, seqNr), _)) =>
               Result(
                 ByteString(value.getStringValue).decodeBase64,
                 serId.getStringValue.toLong,
-                serManifest.getStringValue
+                serManifest.getStringValue,
+                seqNr.getStringValue.toLong
               )
             case None =>
               throw new IllegalStateException(s"No data found for key [$key]")
@@ -125,7 +126,8 @@ final class SpannerObjectInteractions(
       key: String,
       serId: Long,
       serManifest: String,
-      value: ByteString
+      value: ByteString,
+      seqNr: Long
   ): Mutation.Operation =
     Mutation.Operation.InsertOrUpdate(
       Mutation.Write(
@@ -135,6 +137,7 @@ final class SpannerObjectInteractions(
           case Objects.Key => wrapValue(Objects.Key, key)
           case Objects.SerId => wrapValue(Objects.SerId, serId)
           case Objects.SerManifest => wrapValue(Objects.SerManifest, serManifest)
+          case Objects.SeqNr => wrapValue(Objects.SeqNr, seqNr)
           case Objects.Value => wrapValue(Objects.Value, value)
           case Objects.WriteTime => wrapValue(Objects.WriteTime, CommitTimestamp)
           case other => throw new MatchError(other)
