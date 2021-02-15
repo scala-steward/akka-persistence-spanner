@@ -7,7 +7,7 @@ package akka.persistence.spanner.internal
 import akka.actor.ActorSystem
 import akka.annotation.InternalStableApi
 import akka.persistence.spanner.SpannerSettings
-import akka.persistence.spanner.internal.SpannerObjectInteractions.Result
+import akka.persistence.spanner.internal.SpannerObjectInteractions.{ObjectNotFound, Result}
 import akka.util.ByteString
 import com.google.protobuf.struct.Value.Kind.StringValue
 import com.google.protobuf.struct.{ListValue, Value}
@@ -20,6 +20,8 @@ import scala.concurrent.{ExecutionContext, Future}
  */
 @InternalStableApi
 object SpannerObjectInteractions {
+  case class ObjectNotFound(key: String) extends Exception(s"No data found for key [$key]")
+
   case class Result(byteString: ByteString, serId: Long, serManifest: String, seqNr: Long)
 
   object Schema {
@@ -109,7 +111,7 @@ final class SpannerObjectInteractions(
                 seqNr.getStringValue.toLong
               )
             case None =>
-              throw new IllegalStateException(s"No data found for key [$key]")
+              throw new ObjectNotFound(key)
           }
       )
 

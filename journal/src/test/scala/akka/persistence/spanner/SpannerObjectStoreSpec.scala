@@ -5,7 +5,7 @@
 package akka.persistence.spanner
 
 import akka.actor.typed.scaladsl.adapter.ClassicActorSystemOps
-import akka.persistence.spanner.internal.SpannerObjectInteractions.Result
+import akka.persistence.spanner.internal.SpannerObjectInteractions.{ObjectNotFound, Result}
 import akka.persistence.spanner.internal.{SpannerGrpcClientExtension, SpannerObjectInteractions}
 import akka.util.ByteString
 
@@ -39,9 +39,10 @@ class SpannerObjectStoreSpec extends SpannerSpec("SpannerObjectStoreSpec") {
       spannerInteractions.getObject(key).futureValue should be(Result(value, serId, serManifest, 0L))
     }
     "produce an error when fetching a non-existing key" in {
-      spannerInteractions.getObject("nonexistent-key").failed.futureValue.getMessage should include(
-        "No data found for key [nonexistent-key]"
-      )
+      val key = "nonexistent-key"
+      val failure = spannerInteractions.getObject(key).failed.futureValue
+      failure should be(new ObjectNotFound(key))
+      failure.getMessage should be("No data found for key [nonexistent-key]")
     }
     "update a value" in {
       val key = "key-to-be-updated"
