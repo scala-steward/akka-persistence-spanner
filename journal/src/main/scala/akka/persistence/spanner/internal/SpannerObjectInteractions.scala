@@ -28,6 +28,7 @@ object SpannerObjectInteractions {
       def objectTable(settings: SpannerSettings): String = objectTable(settings.objectTable)
       def objectTable(table: String): String =
         s"""CREATE TABLE $table (
+           |  entity STRING(MAX) NOT NULL,
            |  key STRING(MAX) NOT NULL,
            |  value BYTES(MAX),
            |  ser_id INT64 NOT NULL,
@@ -36,7 +37,9 @@ object SpannerObjectInteractions {
            |  write_time TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp=true),
            |) PRIMARY KEY (key)""".stripMargin
 
-      // TODO should we split the key into a persistenceId and an entityId?
+      // Constant over all instances of this entity
+      val Entity = "entity" -> TypeCode.STRING
+      // Key that uniquely identifies an entity instance - typically by concatenating the entity field and a unique entityId
       val Key = "key" -> TypeCode.STRING
       val Value = "value" -> TypeCode.BYTES
       val SerId = "ser_id" -> TypeCode.INT64
@@ -44,7 +47,7 @@ object SpannerObjectInteractions {
       val SeqNr = "seq_nr" -> TypeCode.INT64
       val WriteTime = "write_time" -> TypeCode.TIMESTAMP
 
-      val Columns = List(Key, SerId, SerManifest, Value, SeqNr, WriteTime)
+      val Columns = List(Entity, Key, SerId, SerManifest, Value, SeqNr, WriteTime)
     }
   }
 }
@@ -65,9 +68,17 @@ final class SpannerObjectInteractions(
 ) {
   import SpannerObjectInteractions.Schema.Objects
 
-  def upsertObject(key: String, serId: Long, serManifest: String, value: ByteString, seqNr: Long): Future[Unit] =
+  def upsertObject(
+      entity: String,
+      key: String,
+      serId: Long,
+      serManifest: String,
+      value: ByteString,
+      seqNr: Long
+  ): Future[Unit] =
     spannerGrpcClient.withSession(session => {
-      spannerGrpcClient.write(Seq(Mutation(upsertObjectOperation(key, serId, serManifest, value, seqNr))))(session)
+      spannerGrpcClient
+        .write(Seq(Mutation(upsertObjectOperation(entity, key, serId, serManifest, value, seqNr))))(session)
     })
 
   // TODO maybe return timestamp?
@@ -123,6 +134,7 @@ final class SpannerObjectInteractions(
   private object CommitTimestamp
 
   private def upsertObjectOperation(
+      entity: String,
       key: String,
       serId: Long,
       serManifest: String,
@@ -134,6 +146,7 @@ final class SpannerObjectInteractions(
         settings.objectTable,
         Objects.Columns.map(_._1),
         List(ListValue(Objects.Columns.map {
+          case Objects.Entity => wrapValue(Objects.Entity, entity)
           case Objects.Key => wrapValue(Objects.Key, key)
           case Objects.SerId => wrapValue(Objects.SerId, serId)
           case Objects.SerManifest => wrapValue(Objects.SerManifest, serManifest)

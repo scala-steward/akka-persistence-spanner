@@ -18,6 +18,8 @@ class SpannerObjectStoreSpec extends SpannerSpec("SpannerObjectStoreSpec") {
     spannerSettings
   )
 
+  // All objects in this test are carts
+  val entity = "cart"
   // All objects in this test use the same serialization ;)
   val serId = 5749231L
   val serManifest = "manifest-type-information"
@@ -26,14 +28,14 @@ class SpannerObjectStoreSpec extends SpannerSpec("SpannerObjectStoreSpec") {
     "save and retrieve a value" in {
       val key = "my-key"
       val value = ByteString("Genuinely Collaborative")
-      spannerInteractions.upsertObject(key, serId, serManifest, value, 0L).futureValue
+      spannerInteractions.upsertObject(entity, key, serId, serManifest, value, 0L).futureValue
       spannerInteractions.getObject(key).futureValue should be(Result(value, serId, serManifest, 0L))
     }
     "save and retrieve a binary value" in {
       val key = "my-key"
       // this is not a valid UTF-8 string:
       val value = ByteString(Array[Byte](0xC0.toByte, 0xC1.toByte))
-      spannerInteractions.upsertObject(key, serId, serManifest, value, 0L).futureValue
+      spannerInteractions.upsertObject(entity, key, serId, serManifest, value, 0L).futureValue
       spannerInteractions.getObject(key).futureValue should be(Result(value, serId, serManifest, 0L))
     }
     "produce an error when fetching a non-existing key" in {
@@ -44,17 +46,17 @@ class SpannerObjectStoreSpec extends SpannerSpec("SpannerObjectStoreSpec") {
     "update a value" in {
       val key = "key-to-be-updated"
       val value = ByteString("Genuinely Collaborative")
-      spannerInteractions.upsertObject(key, serId, serManifest, value, 0L).futureValue
+      spannerInteractions.upsertObject(entity, key, serId, serManifest, value, 0L).futureValue
       spannerInteractions.getObject(key).futureValue should be(Result(value, serId, serManifest, 0L))
 
       val updatedValue = ByteString("Open to Feedback")
-      spannerInteractions.upsertObject(key, serId, serManifest, updatedValue, 1L).futureValue
+      spannerInteractions.upsertObject(entity, key, serId, serManifest, updatedValue, 1L).futureValue
       spannerInteractions.getObject(key).futureValue should be(Result(updatedValue, serId, serManifest, 1L))
     }
     "support deletions" in {
       val key = "to-be-added-and-removed"
       val value = ByteString("Genuinely Collaborative")
-      spannerInteractions.upsertObject(key, serId, serManifest, value, 0L).futureValue
+      spannerInteractions.upsertObject(entity, key, serId, serManifest, value, 0L).futureValue
       spannerInteractions.getObject(key).futureValue should be(Result(value, serId, serManifest, 0L))
       spannerInteractions.deleteObject(key).futureValue
       spannerInteractions.getObject(key).failed.futureValue.getMessage should include(
