@@ -26,7 +26,7 @@ class SpannerObjectStoreSpec extends SpannerSpec("SpannerObjectStoreSpec") {
       spannerInteractions.getObject(key).futureValue should be(Result(value, serId, serManifest, 0L))
     }
     "save and retrieve a binary value" in {
-      val key = "my-key"
+      val key = "my-key-for-binary-value"
       // this is not a valid UTF-8 string:
       val value = ByteString(Array[Byte](0xC0.toByte, 0xC1.toByte))
       spannerInteractions.upsertObject(entity, key, serId, serManifest, value, 0L).futureValue
@@ -47,6 +47,20 @@ class SpannerObjectStoreSpec extends SpannerSpec("SpannerObjectStoreSpec") {
       val updatedValue = ByteString("Open to Feedback")
       spannerInteractions.upsertObject(entity, key, serId, serManifest, updatedValue, 1L).futureValue
       spannerInteractions.getObject(key).futureValue should be(Result(updatedValue, serId, serManifest, 1L))
+    }
+    "detect and reject concurrent updates" in {
+      val key = "key-to-be-updated-concurrently"
+      val value = ByteString("Genuinely Collaborative")
+      spannerInteractions.upsertObject(entity, key, serId, serManifest, value, 0L).futureValue
+      spannerInteractions.getObject(key).futureValue should be(Result(value, serId, serManifest, 0L))
+
+      val updatedValue = ByteString("Open to Feedback")
+      spannerInteractions.upsertObject(entity, key, serId, serManifest, updatedValue, 1L).futureValue
+      spannerInteractions.getObject(key).futureValue should be(Result(updatedValue, serId, serManifest, 1L))
+
+      // simulate an update by a different node that didn't see the first one:
+      val updatedValue2 = ByteString("Genuine and Sincere in all Communications")
+      spannerInteractions.upsertObject(entity, key, serId, serManifest, updatedValue2, 1L).failed.futureValue
     }
     "support deletions" in {
       val key = "to-be-added-and-removed"

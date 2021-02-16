@@ -282,6 +282,7 @@ private[spanner] final class SpannerSnapshotInteractions(
               )
             )
           )
+          .map(_ => ())
       }
   }
 
