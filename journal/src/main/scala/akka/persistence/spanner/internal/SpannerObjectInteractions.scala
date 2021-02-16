@@ -5,9 +5,9 @@
 package akka.persistence.spanner.internal
 
 import akka.actor.ActorSystem
-import akka.annotation.InternalStableApi
+import akka.annotation.InternalApi
 import akka.persistence.spanner.SpannerSettings
-import akka.persistence.spanner.internal.SpannerObjectInteractions.{ObjectNotFound, Result}
+import akka.persistence.spanner.SpannerObjectStore.{ObjectNotFound, Result}
 import akka.util.ByteString
 import com.google.protobuf.struct.Value.Kind.StringValue
 import com.google.protobuf.struct.{ListValue, Value}
@@ -18,12 +18,8 @@ import scala.concurrent.{ExecutionContext, Future}
 /**
  * INTERNAL API
  */
-@InternalStableApi
+@InternalApi
 object SpannerObjectInteractions {
-  case class ObjectNotFound(key: String) extends Exception(s"No data found for key [$key]")
-
-  case class Result(byteString: ByteString, serId: Long, serManifest: String, seqNr: Long)
-
   object Schema {
     // To back Durable Actors
     object Objects {
@@ -60,8 +56,8 @@ object SpannerObjectInteractions {
  * Class for doing spanner interaction outside of an actor to avoid mistakes
  * in future callbacks
  */
-@InternalStableApi
-final class SpannerObjectInteractions(
+@InternalApi
+private[spanner] final class SpannerObjectInteractions(
     spannerGrpcClient: SpannerGrpcClient,
     settings: SpannerSettings
 )(

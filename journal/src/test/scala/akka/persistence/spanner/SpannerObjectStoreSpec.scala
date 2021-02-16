@@ -4,19 +4,13 @@
 
 package akka.persistence.spanner
 
-import akka.actor.typed.scaladsl.adapter.ClassicActorSystemOps
-import akka.persistence.spanner.internal.SpannerObjectInteractions.{ObjectNotFound, Result}
-import akka.persistence.spanner.internal.{SpannerGrpcClientExtension, SpannerObjectInteractions}
+import akka.persistence.spanner.SpannerObjectStore.{ObjectNotFound, Result}
 import akka.util.ByteString
 
 class SpannerObjectStoreSpec extends SpannerSpec("SpannerObjectStoreSpec") {
   override def withObjectStore: Boolean = true
 
-  val grpcClient = SpannerGrpcClientExtension(classicSystem.toTyped).clientFor("akka.persistence.spanner")
-  val spannerInteractions = new SpannerObjectInteractions(
-    grpcClient,
-    spannerSettings
-  )
+  val spannerInteractions = SpannerObjectStore()
 
   // All objects in this test are carts
   val entity = "cart"
