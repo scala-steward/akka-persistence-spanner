@@ -7,7 +7,7 @@ package akka.persistence.spanner.internal
 import akka.actor.ActorSystem
 import akka.annotation.InternalApi
 import akka.persistence.spanner.SpannerSettings
-import akka.persistence.spanner.SpannerObjectStore.{ObjectNotFound, Result}
+import akka.persistence.spanner.SpannerObjectStore.Result
 import akka.util.ByteString
 import com.google.protobuf.struct.Value.Kind.StringValue
 import com.google.protobuf.struct.{ListValue, Struct, Value}
@@ -174,7 +174,7 @@ private[spanner] final class SpannerObjectInteractions(
       })
 
   // TODO maybe return timestamp?
-  def getObject(key: String): Future[Result] =
+  def getObject(key: String): Future[Option[Result]] =
     spannerGrpcClient
       .withSession(
         session =>
@@ -192,16 +192,14 @@ private[spanner] final class SpannerObjectInteractions(
       )
       .map(
         resultSet =>
-          resultSet.rows.headOption match {
-            case Some(ListValue(Seq(value, serId, serManifest, seqNr), _)) =>
+          resultSet.rows.headOption.map {
+            case ListValue(Seq(value, serId, serManifest, seqNr), _) =>
               Result(
                 ByteString(value.getStringValue).decodeBase64,
                 serId.getStringValue.toLong,
                 serManifest.getStringValue,
                 seqNr.getStringValue.toLong
               )
-            case None =>
-              throw ObjectNotFound(key)
           }
       )
 

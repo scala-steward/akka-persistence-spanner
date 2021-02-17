@@ -31,7 +31,7 @@ class SpannerObjectStore(interactions: SpannerObjectInteractions) {
       seqNr: Long
   ): Future[Unit] = interactions.upsertObject(entity, key, serId, serManifest, value, seqNr)
 
-  def getObject(key: String): Future[Result] = interactions.getObject(key)
+  def getObject(key: String): Future[Option[Result]] = interactions.getObject(key)
 
   def deleteObject(key: String): Future[Unit] = interactions.deleteObject(key)
 }
@@ -42,8 +42,6 @@ class SpannerObjectStore(interactions: SpannerObjectInteractions) {
  * INTERNAL API
  */
 object SpannerObjectStore {
-  case class ObjectNotFound(key: String) extends RuntimeException(s"No data found for key [$key]") with NoStackTrace
-
   case class Result(byteString: ByteString, serId: Long, serManifest: String, seqNr: Long)
 
   def apply()(implicit system: ActorSystem): SpannerObjectStore = {
