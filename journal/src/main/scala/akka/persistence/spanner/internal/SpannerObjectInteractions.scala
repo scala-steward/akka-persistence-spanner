@@ -12,6 +12,7 @@ import akka.util.ByteString
 import com.google.protobuf.struct.Value.Kind.StringValue
 import com.google.protobuf.struct.{ListValue, Struct, Value}
 import com.google.spanner.v1.{KeySet, Mutation, ReadRequest, Type, TypeCode}
+import io.grpc.{Status, StatusRuntimeException}
 
 import scala.concurrent.{ExecutionContext, Future}
 
@@ -35,6 +36,7 @@ object SpannerObjectInteractions {
            |  write_time TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp=true),
            |) PRIMARY KEY (key)""".stripMargin
 
+      /** Columns */
       // Constant over all instances of this entity
       val Entity = "entity" -> TypeCode.STRING
       // Key that uniquely identifies an entity instance - typically by concatenating the entity field and a unique entityId
@@ -46,6 +48,10 @@ object SpannerObjectInteractions {
       val WriteTime = "write_time" -> TypeCode.TIMESTAMP
 
       val Columns = List(Entity, Key, SerId, SerManifest, Value, SeqNr, WriteTime)
+
+      /** For use in queries: */
+      val OldSeqNr = "old_sequence_nr" -> TypeCode.INT64
+      val NewSeqNr = "new_sequence_nr" -> TypeCode.INT64
     }
   }
 }
@@ -75,9 +81,9 @@ private[spanner] final class SpannerObjectInteractions(
       Objects.Value,
       Objects.SerId,
       Objects.SerManifest,
-      ("new_sequence_nr" -> Objects.SeqNr._2),
+      Objects.NewSeqNr,
       Objects.Key,
-      ("old_sequence_nr" -> Objects.SeqNr._2)
+      Objects.OldSeqNr
     ).toMap
 
   def upsertObject(
@@ -93,6 +99,8 @@ private[spanner] final class SpannerObjectInteractions(
       else update(entity, key, serId, serManifest, value, seqNr, session)
     })
 
+  private object CommitTimestamp
+
   private def insertFirst(
       entity: String,
       key: String,
@@ -102,30 +110,36 @@ private[spanner] final class SpannerObjectInteractions(
       seqNr: Long,
       session: SessionPool.PooledSession
   ) =
-    spannerGrpcClient.client
-      .read(
-        ReadRequest(
-          session.session.name,
-          transaction = None,
-          settings.objectTable,
-          index = "",
-          Seq(Objects.Key, Objects.SeqNr).map(_._1),
-          wrapKey(key),
-          limit = 1
-        )
-      )
-      .map {
-        _.rows.headOption.foreach { row =>
-          throw new IllegalStateException(
-            s"Insert failed: object for key [$key] already exists"
+    spannerGrpcClient
+      .write(
+        Seq(
+          Mutation(
+            Mutation.Operation.Insert(
+              Mutation.Write(
+                settings.objectTable,
+                Objects.Columns.map(_._1),
+                List(ListValue(Objects.Columns.map {
+                  case Objects.Entity => wrapValue(Objects.Entity, entity)
+                  case Objects.Key => wrapValue(Objects.Key, key)
+                  case Objects.SerId => wrapValue(Objects.SerId, serId)
+                  case Objects.SerManifest => wrapValue(Objects.SerManifest, serManifest)
+                  case Objects.SeqNr => wrapValue(Objects.SeqNr, seqNr)
+                  case Objects.Value => wrapValue(Objects.Value, value)
+                  case Objects.WriteTime => wrapValue(Objects.WriteTime, CommitTimestamp)
+                  case other => throw new MatchError(other)
+                }))
+              )
+            )
           )
-        }
+        )
+      )(session)
+      .recoverWith {
+        case e: StatusRuntimeException =>
+          if (e.getStatus.getCode == Status.Code.ALREADY_EXISTS)
+            Future.failed(new IllegalStateException(s"Insert failed: object for key [$key] already exists"))
+          else
+            Future.failed(e)
       }
-      .flatMap(
-        _ =>
-          spannerGrpcClient
-            .write(Seq(Mutation(upsertObjectOperation(entity, key, serId, serManifest, value, seqNr))))(session)
-      )
 
   private def update(
       entity: String,
@@ -145,8 +159,8 @@ private[spanner] final class SpannerObjectInteractions(
             case Objects.SerId => wrapNameValue(Objects.SerId, serId)
             case Objects.SerManifest => wrapNameValue(Objects.SerManifest, serManifest)
             case Objects.Value => wrapNameValue(Objects.Value, value)
-            case oldSeqNr @ ("old_sequence_nr", TypeCode.INT64) => wrapNameValue(oldSeqNr, seqNr - 1)
-            case newSeqNr @ ("new_sequence_nr", TypeCode.INT64) => wrapNameValue(newSeqNr, seqNr)
+            case Objects.OldSeqNr => wrapNameValue(Objects.OldSeqNr, seqNr - 1)
+            case Objects.NewSeqNr => wrapNameValue(Objects.NewSeqNr, seqNr)
             case other => throw new MatchError(other)
           }), SqlUpdateTypes.mapValues(Type(_)).toMap)
         )
@@ -208,33 +222,6 @@ private[spanner] final class SpannerObjectInteractions(
     })
 
   private def wrapKey(key: String) = Some(KeySet(List(ListValue(List(wrapValue(Objects.Key, key))))))
-
-  private object CommitTimestamp
-
-  private def upsertObjectOperation(
-      entity: String,
-      key: String,
-      serId: Long,
-      serManifest: String,
-      value: ByteString,
-      seqNr: Long
-  ): Mutation.Operation =
-    Mutation.Operation.InsertOrUpdate(
-      Mutation.Write(
-        settings.objectTable,
-        Objects.Columns.map(_._1),
-        List(ListValue(Objects.Columns.map {
-          case Objects.Entity => wrapValue(Objects.Entity, entity)
-          case Objects.Key => wrapValue(Objects.Key, key)
-          case Objects.SerId => wrapValue(Objects.SerId, serId)
-          case Objects.SerManifest => wrapValue(Objects.SerManifest, serManifest)
-          case Objects.SeqNr => wrapValue(Objects.SeqNr, seqNr)
-          case Objects.Value => wrapValue(Objects.Value, value)
-          case Objects.WriteTime => wrapValue(Objects.WriteTime, CommitTimestamp)
-          case other => throw new MatchError(other)
-        }))
-      )
-    )
 
   private def wrapNameValue(column: (String, TypeCode), value: Any): (String, Value) =
     (column._1, wrapValue(column, value))

@@ -48,6 +48,17 @@ class SpannerObjectStoreSpec extends SpannerSpec("SpannerObjectStoreSpec") {
       spannerInteractions.upsertObject(entity, key, serId, serManifest, updatedValue, 1L).futureValue
       spannerInteractions.getObject(key).futureValue should be(Result(updatedValue, serId, serManifest, 1L))
     }
+    "detect and reject concurrent inserts" in {
+      val key = "key-to-be-inserted-concurrently"
+      val value = ByteString("Genuinely Collaborative")
+      spannerInteractions.upsertObject(entity, key, serId, serManifest, value, 0L).futureValue
+      spannerInteractions.getObject(key).futureValue should be(Result(value, serId, serManifest, 0L))
+
+      val updatedValue = ByteString("Open to Feedback")
+      val failure =
+        spannerInteractions.upsertObject(entity, key, serId, serManifest, updatedValue, 0L).failed.futureValue
+      failure.getMessage should include(s"Insert failed: object for key [$key] already exists")
+    }
     "detect and reject concurrent updates" in {
       val key = "key-to-be-updated-concurrently"
       val value = ByteString("Genuinely Collaborative")

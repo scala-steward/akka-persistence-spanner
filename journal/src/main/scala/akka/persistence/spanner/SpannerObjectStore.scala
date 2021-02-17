@@ -10,6 +10,7 @@ import akka.annotation.InternalStableApi
 import akka.persistence.spanner.internal.{SpannerGrpcClientExtension, SpannerObjectInteractions}
 import akka.util.ByteString
 
+import scala.util.control.NoStackTrace
 import scala.concurrent.Future
 
 /**
@@ -41,7 +42,7 @@ class SpannerObjectStore(interactions: SpannerObjectInteractions) {
  * INTERNAL API
  */
 object SpannerObjectStore {
-  case class ObjectNotFound(key: String) extends Exception(s"No data found for key [$key]")
+  case class ObjectNotFound(key: String) extends RuntimeException(s"No data found for key [$key]") with NoStackTrace
 
   case class Result(byteString: ByteString, serId: Long, serManifest: String, seqNr: Long)
 

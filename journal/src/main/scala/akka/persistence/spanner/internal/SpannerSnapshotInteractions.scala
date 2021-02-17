@@ -5,10 +5,10 @@
 package akka.persistence.spanner.internal
 
 import java.util.Base64
-
 import akka.actor.typed.scaladsl.LoggerOps
 import akka.actor.{ActorSystem, ExtendedActorSystem}
 import akka.annotation.InternalApi
+import akka.dispatch.ExecutionContexts
 import akka.persistence.spanner.SpannerSettings
 import akka.persistence.spanner.internal.SpannerUtils.{spannerTimestampToUnixMillis, unixTimestampMillisToSpanner}
 import akka.persistence.{SelectedSnapshot, SnapshotMetadata, SnapshotSelectionCriteria}
@@ -282,7 +282,7 @@ private[spanner] final class SpannerSnapshotInteractions(
               )
             )
           )
-          .map(_ => ())
+          .map(_ => ())(ExecutionContexts.parasitic)
       }
   }
 
