@@ -8,6 +8,7 @@ import akka.actor.ActorSystem
 import akka.annotation.InternalApi
 import akka.persistence.spanner.SpannerSettings
 import akka.persistence.spanner.SpannerObjectStore.Result
+import akka.persistence.typed.PersistenceId
 import akka.util.ByteString
 import com.google.protobuf.struct.Value.Kind.StringValue
 import com.google.protobuf.struct.{ListValue, Struct, Value}
@@ -87,7 +88,7 @@ private[spanner] final class SpannerObjectInteractions(
 
   def upsertObject(
       entity: String,
-      persistenceId: String,
+      persistenceId: PersistenceId,
       serId: Long,
       serManifest: String,
       value: ByteString,
@@ -102,7 +103,7 @@ private[spanner] final class SpannerObjectInteractions(
 
   private def insertFirst(
       entity: String,
-      persistenceId: String,
+      persistenceId: PersistenceId,
       serId: Long,
       serManifest: String,
       value: ByteString,
@@ -144,7 +145,7 @@ private[spanner] final class SpannerObjectInteractions(
 
   private def update(
       entity: String,
-      persistenceId: String,
+      persistenceId: PersistenceId,
       serId: Long,
       serManifest: String,
       value: ByteString,
@@ -170,12 +171,12 @@ private[spanner] final class SpannerObjectInteractions(
         val updated = response.resultSets.head.stats.head.rowCount.rowCountExact.head
         if (updated != 1L)
           throw new IllegalStateException(
-            s"Update failed: object for persistence id [$persistenceId] could not be updated to sequence number [$seqNr]"
+            s"Update failed: object for persistence id [${persistenceId.id}] could not be updated to sequence number [$seqNr]"
           )
       })
 
   // TODO maybe return timestamp?
-  def getObject(persistenceId: String): Future[Option[Result]] =
+  def getObject(persistenceId: PersistenceId): Future[Option[Result]] =
     spannerGrpcClient
       .withSession(
         session =>
@@ -204,7 +205,7 @@ private[spanner] final class SpannerObjectInteractions(
           }
       )
 
-  def deleteObject(persistenceId: String): Future[Unit] =
+  def deleteObject(persistenceId: PersistenceId): Future[Unit] =
     spannerGrpcClient.withSession(session => {
       spannerGrpcClient.write(
         Seq(
@@ -220,8 +221,8 @@ private[spanner] final class SpannerObjectInteractions(
       )(session)
     })
 
-  private def wrapPersistenceId(persistenceId: String) =
-    Some(KeySet(List(ListValue(List(wrapValue(Objects.PersistenceId, persistenceId))))))
+  private def wrapPersistenceId(persistenceId: PersistenceId) =
+    Some(KeySet(List(ListValue(List(wrapValue(Objects.PersistenceId, persistenceId.id))))))
 
   private def wrapNameValue(column: (String, TypeCode), value: Any): (String, Value) =
     (column._1, wrapValue(column, value))
@@ -229,6 +230,7 @@ private[spanner] final class SpannerObjectInteractions(
   private def wrapValue(column: (String, TypeCode), value: Any): Value =
     Value((column, value) match {
       case ((_, TypeCode.STRING), stringValue: String) => StringValue(stringValue)
+      case ((_, TypeCode.STRING), persistenceId: PersistenceId) => StringValue(persistenceId.id)
       case ((_, TypeCode.INT64), longValue: Long) => StringValue(longValue.toString)
       case ((_, TypeCode.BYTES), bytes: ByteString) =>
         // the protobuf struct data type doesn't have a type for binary data, so we base64-encode it

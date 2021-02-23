@@ -8,9 +8,9 @@ import akka.actor.ActorSystem
 import akka.actor.typed.scaladsl.adapter.ClassicActorSystemOps
 import akka.annotation.InternalStableApi
 import akka.persistence.spanner.internal.{SpannerGrpcClientExtension, SpannerObjectInteractions}
+import akka.persistence.typed.PersistenceId
 import akka.util.ByteString
 
-import scala.util.control.NoStackTrace
 import scala.concurrent.Future
 
 /**
@@ -24,16 +24,16 @@ class SpannerObjectStore(interactions: SpannerObjectInteractions) {
 
   def upsertObject(
       entityType: String,
-      persistenceId: String,
+      persistenceId: PersistenceId,
       serId: Long,
       serManifest: String,
       value: ByteString,
       seqNr: Long
   ): Future[Unit] = interactions.upsertObject(entityType, persistenceId, serId, serManifest, value, seqNr)
 
-  def getObject(persistenceId: String): Future[Option[Result]] = interactions.getObject(persistenceId)
+  def getObject(persistenceId: PersistenceId): Future[Option[Result]] = interactions.getObject(persistenceId)
 
-  def deleteObject(persistenceId: String): Future[Unit] = interactions.deleteObject(persistenceId)
+  def deleteObject(persistenceId: PersistenceId): Future[Unit] = interactions.deleteObject(persistenceId)
 }
 
 /**
