@@ -1,5 +1,5 @@
 // Update GrpcVersion in Dependencies.scala when updating akka grpc version
-addSbtPlugin("com.lightbend.akka.grpc" % "sbt-akka-grpc" % "1.0.0")
+addSbtPlugin("com.lightbend.akka.grpc" % "sbt-akka-grpc" % "1.1.0")
 
 addSbtPlugin("de.heikoseeberger" % "sbt-header" % "5.2.0") // for maintenance of copyright file header
 addSbtPlugin("org.scalameta" % "sbt-scalafmt" % "2.2.1")
