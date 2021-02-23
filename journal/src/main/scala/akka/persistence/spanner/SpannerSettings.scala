@@ -62,6 +62,10 @@ private[spanner] final class SpannerSettings(config: Config) {
   val maxWriteRetryTimeout = config.getDuration("max-write-retry-timeout").asScala
 
   val snapshotsTable = config.getString("snapshot.table")
+
+  // Object store to (eventually) back durable actors
+  val objectTable = config.getString("object.table")
+
   val sessionPool = new SessionPoolSettings(config.getConfig("session-pool"))
   val sessionAcquisitionTimeout = config.getDuration("session-acquisition-timeout").asScala
 

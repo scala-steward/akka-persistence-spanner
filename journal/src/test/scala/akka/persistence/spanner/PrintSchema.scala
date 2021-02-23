@@ -5,9 +5,12 @@
 package akka.persistence.spanner
 
 import java.io.{File, PrintWriter}
-
 import akka.actor.ActorSystem
-import akka.persistence.spanner.internal.{SpannerJournalInteractions, SpannerSnapshotInteractions}
+import akka.persistence.spanner.internal.{
+  SpannerJournalInteractions,
+  SpannerObjectInteractions,
+  SpannerSnapshotInteractions
+}
 
 object PrintSchema {
   def main(args: Array[String]): Unit = {
@@ -40,6 +43,12 @@ object PrintSchema {
       pw.println("//#snapshot-tables")
       pw.println(SpannerSnapshotInteractions.Schema.Snapshots.snapshotTable(settings))
       pw.println("//#snapshot-tables")
+    }
+
+    withWriter("./target/object-tables.txt") { pw =>
+      pw.println("//#object-tables")
+      pw.println(SpannerObjectInteractions.Schema.Objects.objectTable(settings))
+      pw.println("//#object-tables")
     }
     system.terminate()
   }

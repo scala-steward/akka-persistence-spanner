@@ -121,7 +121,7 @@ private[spanner] object SpannerGrpcClient {
    */
   def executeBatchDml(statements: List[(String, Struct, Map[String, Type])])(
       implicit session: PooledSession
-  ): Future[Unit] =
+  ): Future[ExecuteBatchDmlResponse] =
     withWriteRetries { () =>
       def createBatchDmlRequest(sessionId: String, transactionId: ByteString): ExecuteBatchDmlRequest = {
         val s = statements.map {
@@ -168,7 +168,7 @@ private[spanner] object SpannerGrpcClient {
         )
       } yield {
         log.trace("Successful commit at {}", commitResponse.commitTimestamp.map(t => (t.seconds, t.nanos)))
-        ()
+        resultSet
       }
     }
 

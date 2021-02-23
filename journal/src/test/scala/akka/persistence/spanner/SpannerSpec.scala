@@ -5,12 +5,15 @@
 package akka.persistence.spanner
 
 import java.util.concurrent.atomic.AtomicLong
-
 import akka.actor.testkit.typed.internal.CapturingAppender
 import akka.actor.testkit.typed.scaladsl.ActorTestKit
 import akka.actor.typed.scaladsl.adapter._
 import akka.grpc.GrpcClientSettings
-import akka.persistence.spanner.internal.{SpannerJournalInteractions, SpannerSnapshotInteractions}
+import akka.persistence.spanner.internal.{
+  SpannerJournalInteractions,
+  SpannerObjectInteractions,
+  SpannerSnapshotInteractions
+}
 import com.google.auth.oauth2.GoogleCredentials
 import com.google.protobuf.struct.ListValue
 import com.google.protobuf.struct.Value.Kind
@@ -171,6 +174,7 @@ trait SpannerLifecycle
   @volatile private var failed = false
 
   def withSnapshotStore: Boolean = false
+  def withObjectStore: Boolean = false
 
   override protected def beforeAll(): Unit = {
     super.beforeAll()
@@ -201,12 +205,16 @@ trait SpannerLifecycle
 
     log.debug("Used settings: {}", spannerSettings)
     log.info("Creating database {}", spannerSettings.database)
-    val dbSchemas = SpannerJournalInteractions.Schema.Journal.journalTable(spannerSettings) ::
+
+    val dbSchemas: List[String] = SpannerJournalInteractions.Schema.Journal.journalTable(spannerSettings) ::
       SpannerJournalInteractions.Schema.Tags.tagTable(spannerSettings) ::
       SpannerJournalInteractions.Schema.Tags.eventsByTagIndex(spannerSettings) ::
-      SpannerJournalInteractions.Schema.Deleted.deleteMetadataTable(spannerSettings) ::
+      SpannerJournalInteractions.Schema.Deleted.deleteMetadataTable(spannerSettings) :: Nil ++
       (if (withSnapshotStore)
          SpannerSnapshotInteractions.Schema.Snapshots.snapshotTable(spannerSettings) :: Nil
+       else Nil) ++
+      (if (withObjectStore)
+         SpannerObjectInteractions.Schema.Objects.objectTable(spannerSettings) :: Nil
        else Nil)
     dbSchemas.foreach(log.debug(_))
 
