@@ -27,27 +27,26 @@ object SpannerObjectInteractions {
       def objectTable(settings: SpannerSettings): String = objectTable(settings.objectTable)
       def objectTable(table: String): String =
         s"""CREATE TABLE $table (
-           |  entity STRING(MAX) NOT NULL,
-           |  key STRING(MAX) NOT NULL,
+           |  entity_type STRING(MAX) NOT NULL,
+           |  persistence_id STRING(MAX) NOT NULL,
            |  value BYTES(MAX),
            |  ser_id INT64 NOT NULL,
            |  ser_manifest STRING(MAX) NOT NULL,
            |  sequence_nr INT64 NOT NULL,
            |  write_time TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp=true),
-           |) PRIMARY KEY (key)""".stripMargin
+           |) PRIMARY KEY (persistence_id)""".stripMargin
 
       /** Columns */
-      // Constant over all instances of this entity
-      val Entity = "entity" -> TypeCode.STRING
-      // Key that uniquely identifies an entity instance - typically by concatenating the entity field and a unique entityId
-      val Key = "key" -> TypeCode.STRING
+      val EntityType = "entity_type" -> TypeCode.STRING
+      // Key that uniquely identifies an entity instance - typically by concatenating the entity_typef and a unique id
+      val PersistenceId = "persistence_id" -> TypeCode.STRING
       val Value = "value" -> TypeCode.BYTES
       val SerId = "ser_id" -> TypeCode.INT64
       val SerManifest = "ser_manifest" -> TypeCode.STRING
       val SeqNr = "sequence_nr" -> TypeCode.INT64
       val WriteTime = "write_time" -> TypeCode.TIMESTAMP
 
-      val Columns = List(Entity, Key, SerId, SerManifest, Value, SeqNr, WriteTime)
+      val Columns = List(EntityType, PersistenceId, SerId, SerManifest, Value, SeqNr, WriteTime)
 
       /** For use in queries: */
       val OldSeqNr = "old_sequence_nr" -> TypeCode.INT64
@@ -75,35 +74,35 @@ private[spanner] final class SpannerObjectInteractions(
   val SqlUpdate =
     s"UPDATE ${settings.objectTable} SET value = @value, ser_id = @ser_id, ser_manifest = @ser_manifest, " +
     s"sequence_nr = @new_sequence_nr, write_time = PENDING_COMMIT_TIMESTAMP() " +
-    s"WHERE key = @key AND sequence_nr = @old_sequence_nr"
+    s"WHERE persistence_id = @persistence_id AND sequence_nr = @old_sequence_nr"
   val SqlUpdateTypes: Map[String, TypeCode] =
     List(
       Objects.Value,
       Objects.SerId,
       Objects.SerManifest,
       Objects.NewSeqNr,
-      Objects.Key,
+      Objects.PersistenceId,
       Objects.OldSeqNr
     ).toMap
 
   def upsertObject(
       entity: String,
-      key: String,
+      persistenceId: String,
       serId: Long,
       serManifest: String,
       value: ByteString,
       seqNr: Long
   ): Future[Unit] =
     spannerGrpcClient.withSession(session => {
-      if (seqNr == 0) insertFirst(entity, key, serId, serManifest, value, seqNr, session)
-      else update(entity, key, serId, serManifest, value, seqNr, session)
+      if (seqNr == 0) insertFirst(entity, persistenceId, serId, serManifest, value, seqNr, session)
+      else update(entity, persistenceId, serId, serManifest, value, seqNr, session)
     })
 
   private object CommitTimestamp
 
   private def insertFirst(
       entity: String,
-      key: String,
+      persistenceId: String,
       serId: Long,
       serManifest: String,
       value: ByteString,
@@ -119,8 +118,8 @@ private[spanner] final class SpannerObjectInteractions(
                 settings.objectTable,
                 Objects.Columns.map(_._1),
                 List(ListValue(Objects.Columns.map {
-                  case Objects.Entity => wrapValue(Objects.Entity, entity)
-                  case Objects.Key => wrapValue(Objects.Key, key)
+                  case Objects.EntityType => wrapValue(Objects.EntityType, entity)
+                  case Objects.PersistenceId => wrapValue(Objects.PersistenceId, persistenceId)
                   case Objects.SerId => wrapValue(Objects.SerId, serId)
                   case Objects.SerManifest => wrapValue(Objects.SerManifest, serManifest)
                   case Objects.SeqNr => wrapValue(Objects.SeqNr, seqNr)
@@ -136,14 +135,16 @@ private[spanner] final class SpannerObjectInteractions(
       .recoverWith {
         case e: StatusRuntimeException =>
           if (e.getStatus.getCode == Status.Code.ALREADY_EXISTS)
-            Future.failed(new IllegalStateException(s"Insert failed: object for key [$key] already exists"))
+            Future.failed(
+              new IllegalStateException(s"Insert failed: object for persistence id [$persistenceId] already exists")
+            )
           else
             Future.failed(e)
       }
 
   private def update(
       entity: String,
-      key: String,
+      persistenceId: String,
       serId: Long,
       serManifest: String,
       value: ByteString,
@@ -154,8 +155,8 @@ private[spanner] final class SpannerObjectInteractions(
       .executeBatchDml(
         List(
           (SqlUpdate, Struct(SqlUpdateTypes.map {
-            case Objects.Entity => wrapNameValue(Objects.Entity, entity)
-            case Objects.Key => wrapNameValue(Objects.Key, key)
+            case Objects.EntityType => wrapNameValue(Objects.EntityType, entity)
+            case Objects.PersistenceId => wrapNameValue(Objects.PersistenceId, persistenceId)
             case Objects.SerId => wrapNameValue(Objects.SerId, serId)
             case Objects.SerManifest => wrapNameValue(Objects.SerManifest, serManifest)
             case Objects.Value => wrapNameValue(Objects.Value, value)
@@ -169,12 +170,12 @@ private[spanner] final class SpannerObjectInteractions(
         val updated = response.resultSets.head.stats.head.rowCount.rowCountExact.head
         if (updated != 1L)
           throw new IllegalStateException(
-            s"Update failed: object for key [$key] could not be updated to sequence number [$seqNr]"
+            s"Update failed: object for persistence id [$persistenceId] could not be updated to sequence number [$seqNr]"
           )
       })
 
   // TODO maybe return timestamp?
-  def getObject(key: String): Future[Option[Result]] =
+  def getObject(persistenceId: String): Future[Option[Result]] =
     spannerGrpcClient
       .withSession(
         session =>
@@ -185,7 +186,7 @@ private[spanner] final class SpannerObjectInteractions(
               settings.objectTable,
               index = "",
               Seq(Objects.Value, Objects.SerId, Objects.SerManifest, Objects.SeqNr).map(_._1),
-              wrapKey(key),
+              wrapPersistenceId(persistenceId),
               limit = 1
             )
           )
@@ -203,7 +204,7 @@ private[spanner] final class SpannerObjectInteractions(
           }
       )
 
-  def deleteObject(key: String): Future[Unit] =
+  def deleteObject(persistenceId: String): Future[Unit] =
     spannerGrpcClient.withSession(session => {
       spannerGrpcClient.write(
         Seq(
@@ -211,7 +212,7 @@ private[spanner] final class SpannerObjectInteractions(
             Mutation.Operation.Delete(
               Mutation.Delete(
                 settings.objectTable,
-                wrapKey(key)
+                wrapPersistenceId(persistenceId)
               )
             )
           )
@@ -219,7 +220,8 @@ private[spanner] final class SpannerObjectInteractions(
       )(session)
     })
 
-  private def wrapKey(key: String) = Some(KeySet(List(ListValue(List(wrapValue(Objects.Key, key))))))
+  private def wrapPersistenceId(persistenceId: String) =
+    Some(KeySet(List(ListValue(List(wrapValue(Objects.PersistenceId, persistenceId))))))
 
   private def wrapNameValue(column: (String, TypeCode), value: Any): (String, Value) =
     (column._1, wrapValue(column, value))

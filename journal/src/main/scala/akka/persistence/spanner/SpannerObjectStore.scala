@@ -23,17 +23,17 @@ class SpannerObjectStore(interactions: SpannerObjectInteractions) {
   import SpannerObjectStore._
 
   def upsertObject(
-      entity: String,
-      key: String,
+      entityType: String,
+      persistenceId: String,
       serId: Long,
       serManifest: String,
       value: ByteString,
       seqNr: Long
-  ): Future[Unit] = interactions.upsertObject(entity, key, serId, serManifest, value, seqNr)
+  ): Future[Unit] = interactions.upsertObject(entityType, persistenceId, serId, serManifest, value, seqNr)
 
-  def getObject(key: String): Future[Option[Result]] = interactions.getObject(key)
+  def getObject(persistenceId: String): Future[Option[Result]] = interactions.getObject(persistenceId)
 
-  def deleteObject(key: String): Future[Unit] = interactions.deleteObject(key)
+  def deleteObject(persistenceId: String): Future[Unit] = interactions.deleteObject(persistenceId)
 }
 
 /**
