@@ -10,7 +10,7 @@ import akka.Done
 import akka.actor.CoordinatedShutdown
 import akka.actor.typed.scaladsl.adapter._
 import akka.actor.typed.{ActorSystem, Extension, ExtensionId}
-import akka.annotation.InternalApi
+import akka.annotation.InternalStableApi
 import akka.grpc.GrpcClientSettings
 import akka.persistence.spanner.SpannerSettings
 import akka.util.ccompat.JavaConverters._
@@ -20,16 +20,22 @@ import io.grpc.auth.MoreCallCredentials
 
 import scala.concurrent.{ExecutionContext, Future}
 
-private[spanner] object SpannerGrpcClientExtension extends ExtensionId[SpannerGrpcClientExtension] {
+/**
+ * INTERNAL API
+ */
+@InternalStableApi
+private[akka] object SpannerGrpcClientExtension extends ExtensionId[SpannerGrpcClientExtension] {
   override def createExtension(system: ActorSystem[_]): SpannerGrpcClientExtension =
     new SpannerGrpcClientExtension(system)
 }
 
 /**
- * Share client between parts of the plugin
+ * Share client between parts of the plugin. This is also used by other akka projects that build on this plugin but
+ * should never be used outside of an akka project.
+ * INTERNAL API
  */
-@InternalApi
-private[spanner] class SpannerGrpcClientExtension(system: ActorSystem[_]) extends Extension {
+@InternalStableApi
+private[akka] class SpannerGrpcClientExtension(system: ActorSystem[_]) extends Extension {
   private val sessions = new ConcurrentHashMap[String, SpannerGrpcClient]
   private implicit val classic = system.toClassic
   private implicit val ec: ExecutionContext = system.executionContext

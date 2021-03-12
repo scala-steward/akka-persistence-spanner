@@ -41,6 +41,7 @@ class SpannerObjectStore(interactions: SpannerObjectInteractions) {
  *
  * INTERNAL API
  */
+@InternalStableApi
 object SpannerObjectStore {
   case class Result(byteString: ByteString, serId: Long, serManifest: String, seqNr: Long)
 
