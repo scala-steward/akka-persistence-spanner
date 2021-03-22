@@ -1,14 +1,17 @@
 /*
- * Copyright (C) 2020 Lightbend Inc. <http://www.lightbend.com>
+ * Copyright (C) 2021 Lightbend Inc. <https://www.lightbend.com>
  */
 
 package akka.persistence.spanner
 
+import akka.NotUsed
 import akka.actor.ActorSystem
 import akka.actor.typed.scaladsl.adapter.ClassicActorSystemOps
-import akka.annotation.InternalStableApi
+import akka.annotation.{ApiMayChange, InternalStableApi}
+import akka.persistence.query.Offset
 import akka.persistence.spanner.internal.{SpannerGrpcClientExtension, SpannerObjectInteractions}
 import akka.persistence.typed.PersistenceId
+import akka.stream.scaladsl.Source
 import akka.util.ByteString
 
 import scala.concurrent.Future
@@ -34,6 +37,14 @@ class SpannerObjectStore(interactions: SpannerObjectInteractions) {
   def getObject(persistenceId: PersistenceId): Future[Option[Result]] = interactions.getObject(persistenceId)
 
   def deleteObject(persistenceId: PersistenceId): Future[Unit] = interactions.deleteObject(persistenceId)
+
+  @ApiMayChange
+  def currentChanges(entityType: String, offset: Offset): Source[Change, NotUsed] =
+    interactions.currentChanges(entityType, offset)
+
+  @ApiMayChange
+  def changes(entityType: String, offset: Offset): Source[Change, NotUsed] =
+    interactions.changes(entityType, offset)
 }
 
 /**
@@ -43,6 +54,14 @@ class SpannerObjectStore(interactions: SpannerObjectInteractions) {
  */
 object SpannerObjectStore {
   case class Result(byteString: ByteString, serId: Long, serManifest: String, seqNr: Long)
+  case class Change(
+      persistenceId: String,
+      bytes: ByteString,
+      serId: Long,
+      serManifest: String,
+      seqNr: Long,
+      offset: Offset
+  )
 
   def apply()(implicit system: ActorSystem): SpannerObjectStore = {
     val spannerSettings = new SpannerSettings(system.settings.config.getConfig("akka.persistence.spanner"))

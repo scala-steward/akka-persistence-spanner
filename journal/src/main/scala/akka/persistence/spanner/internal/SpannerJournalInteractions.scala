@@ -81,8 +81,6 @@ private[spanner] object SpannerJournalInteractions {
         .toFormatter
         .withZone(ZoneOffset.UTC)
 
-      val NoOffset = SpannerUtils.unixTimestampMillisToSpanner(0L)
-
       val ReplayTypes = Map(
         "persistence_id" -> Type(TypeCode.STRING),
         "from_sequence_nr" -> Type(TypeCode.INT64),

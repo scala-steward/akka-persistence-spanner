@@ -1,20 +1,25 @@
 /*
- * Copyright (C) 2020 Lightbend Inc. <http://www.lightbend.com>
+ * Copyright (C) 2021 Lightbend Inc. <https://www.lightbend.com>
  */
 
 package akka.persistence.spanner.internal
 
+import akka.NotUsed
 import akka.actor.ActorSystem
-import akka.annotation.InternalApi
-import akka.persistence.spanner.SpannerSettings
-import akka.persistence.spanner.SpannerObjectStore.Result
+import akka.annotation.{ApiMayChange, InternalApi}
+import akka.persistence.query.Offset
+import akka.persistence.spanner.{SpannerOffset, SpannerSettings}
+import akka.persistence.spanner.SpannerObjectStore.{Change, Result}
 import akka.persistence.typed.PersistenceId
+import akka.stream.scaladsl.Source
 import akka.util.ByteString
+import com.google.protobuf.struct
 import com.google.protobuf.struct.Value.Kind.StringValue
 import com.google.protobuf.struct.{ListValue, Struct, Value}
 import com.google.spanner.v1.{KeySet, Mutation, ReadRequest, Type, TypeCode}
 import io.grpc.{Status, StatusRuntimeException}
 
+import scala.collection.immutable
 import scala.concurrent.{ExecutionContext, Future}
 
 /**
@@ -37,6 +42,14 @@ object SpannerObjectInteractions {
            |  write_time TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp=true),
            |) PRIMARY KEY (persistence_id)""".stripMargin
 
+      def objectsByTypeOffsetIndex(settings: SpannerSettings): String = objectsByTypeOffsetIndex(settings.objectTable)
+      def objectsByTypeOffsetIndex(table: String): String =
+        s"""CREATE INDEX ${table}_type_and_offset
+           |ON $table (
+           |  entity_type,
+           |  write_time
+           |)""".stripMargin
+
       /** Columns */
       val EntityType = "entity_type" -> TypeCode.STRING
       // Key that uniquely identifies an entity instance - typically by concatenating the entity_typef and a unique id
@@ -52,6 +65,29 @@ object SpannerObjectInteractions {
       /** For use in queries: */
       val OldSeqNr = "old_sequence_nr" -> TypeCode.INT64
       val NewSeqNr = "new_sequence_nr" -> TypeCode.INT64
+
+      case class Object(
+          entityType: String,
+          persistenceId: String,
+          value: ByteString,
+          serId: Long,
+          serManifest: String,
+          sequenceNr: Long,
+          writeTime: String
+      )
+      def deserializeRow(row: Seq[struct.Value]): Object =
+        row match {
+          case Seq(entityType, persistenceId, serId, serManifest, value, sequenceNr, writeTime) =>
+            Object(
+              entityType = entityType.getStringValue,
+              persistenceId = persistenceId.getStringValue,
+              value = ByteString(value.getStringValue).decodeBase64,
+              serId = serId.getStringValue.toLong,
+              serManifest = serManifest.getStringValue,
+              sequenceNr = sequenceNr.getStringValue.toLong,
+              writeTime = writeTime.getStringValue
+            )
+        }
     }
   }
 }
@@ -220,6 +256,85 @@ private[spanner] final class SpannerObjectInteractions(
         )
       )(session)
     })
+
+  private val ObjectChangesSql =
+    s"""SELECT ${Objects.Columns.map(_._1).mkString(", ")}
+       |FROM ${settings.objectTable}
+       |WHERE entity_type = @entity_type
+       |AND write_time >= @write_time
+       |ORDER BY write_time, persistence_id""".stripMargin
+
+  @ApiMayChange
+  def currentChanges(entityType: String, offset: Offset): Source[Change, NotUsed] = {
+    val spannerOffset = SpannerUtils.toSpannerOffset(offset)
+    spannerGrpcClient
+      .streamingQuery(
+        ObjectChangesSql,
+        params = Some(
+          Struct(
+            Map(
+              "entity_type" -> Value(StringValue(entityType)),
+              "write_time" -> Value(StringValue(spannerOffset.commitTimestamp))
+            )
+          )
+        ),
+        paramTypes = Map("entity_type" -> Type(TypeCode.STRING), "write_time" -> Type(TypeCode.TIMESTAMP))
+      )
+      .statefulMapConcat(deserializeAndAddOffset(spannerOffset))
+      .mapMaterializedValue(_ => NotUsed)
+  }
+
+  def deserializeAndAddOffset(
+      spannerOffset: SpannerOffset
+  ): () => Seq[Value] => immutable.Iterable[Change] = { () =>
+    var currentTimestamp: String = spannerOffset.commitTimestamp
+    var currentSequenceNrs: Map[String, Long] = spannerOffset.seen
+    row => {
+      def objectToChange(offset: SpannerOffset, obj: Objects.Object): Change =
+        Change(
+          persistenceId = obj.persistenceId,
+          bytes = obj.value,
+          serId = obj.serId,
+          serManifest = obj.serManifest,
+          seqNr = obj.sequenceNr,
+          offset = offset
+        )
+
+      val obj = Objects.deserializeRow(row)
+      if (obj.writeTime == currentTimestamp) {
+        // has this already been seen?
+        if (currentSequenceNrs.get(obj.persistenceId).exists(_ >= obj.sequenceNr)) {
+          Nil
+        } else {
+          currentSequenceNrs = currentSequenceNrs.updated(obj.persistenceId, obj.sequenceNr)
+          val offset = SpannerOffset(obj.writeTime, currentSequenceNrs)
+          objectToChange(offset, obj) :: Nil
+        }
+      } else {
+        // ne timestamp, reset currentSequenceNrs
+        currentTimestamp = obj.writeTime
+        currentSequenceNrs = Map(obj.persistenceId -> obj.sequenceNr)
+        val offset = SpannerOffset(obj.writeTime, currentSequenceNrs)
+        objectToChange(offset, obj) :: Nil
+      }
+    }
+  }
+
+  @ApiMayChange
+  def changes(entityType: String, offset: Offset): Source[Change, NotUsed] = {
+    val initialOffset = SpannerUtils.toSpannerOffset(offset)
+
+    def nextOffset(previousOffset: SpannerOffset, change: Change): SpannerOffset =
+      change.offset.asInstanceOf[SpannerOffset]
+
+    ContinuousQuery[SpannerOffset, Change](
+      initialOffset,
+      nextOffset,
+      offset => Some(currentChanges(entityType, offset)),
+      1, // the same row comes back and is filtered due to how the offset works
+      settings.querySettings.refreshInterval
+    )
+  }
 
   private def wrapPersistenceId(persistenceId: PersistenceId) =
     Some(KeySet(List(ListValue(List(wrapValue(Objects.PersistenceId, persistenceId.id))))))
