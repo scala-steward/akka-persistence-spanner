@@ -32,6 +32,6 @@ private[spanner] object SpannerUtils {
     case NoOffset => SpannerOffset(SpannerNoOffset, Map.empty)
     case so: SpannerOffset => so
     case _ =>
-      throw new IllegalArgumentException(s"Spanner does not support offset type: " + offset.getClass)
+      throw new IllegalArgumentException(s"Spanner does not support offset type: ${offset.getClass}")
   }
 }

@@ -66,7 +66,7 @@ object SpannerObjectInteractions {
       val OldSeqNr = "old_sequence_nr" -> TypeCode.INT64
       val NewSeqNr = "new_sequence_nr" -> TypeCode.INT64
 
-      case class Object(
+      case class ObjectRow(
           entityType: String,
           persistenceId: String,
           value: ByteString,
@@ -75,10 +75,10 @@ object SpannerObjectInteractions {
           sequenceNr: Long,
           writeTime: String
       )
-      def deserializeRow(row: Seq[struct.Value]): Object =
+      def deserializeRow(row: Seq[struct.Value]): ObjectRow =
         row match {
           case Seq(entityType, persistenceId, serId, serManifest, value, sequenceNr, writeTime) =>
-            Object(
+            ObjectRow(
               entityType = entityType.getStringValue,
               persistenceId = persistenceId.getStringValue,
               value = ByteString(value.getStringValue).decodeBase64,
@@ -284,13 +284,13 @@ private[spanner] final class SpannerObjectInteractions(
       .mapMaterializedValue(_ => NotUsed)
   }
 
-  def deserializeAndAddOffset(
+  private def deserializeAndAddOffset(
       spannerOffset: SpannerOffset
   ): () => Seq[Value] => immutable.Iterable[Change] = { () =>
     var currentTimestamp: String = spannerOffset.commitTimestamp
     var currentSequenceNrs: Map[String, Long] = spannerOffset.seen
     row => {
-      def objectToChange(offset: SpannerOffset, obj: Objects.Object): Change =
+      def objectToChange(offset: SpannerOffset, obj: Objects.ObjectRow): Change =
         Change(
           persistenceId = obj.persistenceId,
           bytes = obj.value,
