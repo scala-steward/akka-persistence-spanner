@@ -12,7 +12,12 @@ import akka.persistence.PersistentRepr
 import akka.persistence.query.scaladsl._
 import akka.persistence.query.{EventEnvelope, NoOffset, Offset}
 import akka.persistence.spanner.internal.SpannerJournalInteractions.Schema
-import akka.persistence.spanner.internal.{ContinuousQuery, SpannerGrpcClientExtension, SpannerJournalInteractions}
+import akka.persistence.spanner.internal.{
+  ContinuousQuery,
+  SpannerGrpcClientExtension,
+  SpannerJournalInteractions,
+  SpannerUtils
+}
 import akka.persistence.spanner.{SpannerOffset, SpannerSettings}
 import akka.serialization.SerializationExtension
 import akka.stream.scaladsl
@@ -65,7 +70,7 @@ final class SpannerReadJournal(system: ExtendedActorSystem, config: Config, cfgP
     s"SELECT ${Schema.Journal.Columns.mkString(",")} FROM ${settings.journalTable} WHERE persistence_id = @persistence_id AND sequence_nr >= @from_sequence_Nr AND sequence_nr <= @to_sequence_nr ORDER BY sequence_nr"
 
   override def currentEventsByTag(tag: String, offset: Offset): scaladsl.Source[EventEnvelope, NotUsed] = {
-    val spannerOffset = toSpannerOffset(offset)
+    val spannerOffset = SpannerUtils.toSpannerOffset(offset)
     log.debugN("Query from {}. From offset {}", spannerOffset.commitTimestamp, offset)
     grpcClient
       .streamingQuery(
@@ -82,7 +87,7 @@ final class SpannerReadJournal(system: ExtendedActorSystem, config: Config, cfgP
   }
 
   override def eventsByTag(tag: String, offset: Offset): Source[EventEnvelope, NotUsed] = {
-    val initialOffset = toSpannerOffset(offset)
+    val initialOffset = SpannerUtils.toSpannerOffset(offset)
 
     def nextOffset(previousOffset: SpannerOffset, eventEnvelope: EventEnvelope): SpannerOffset =
       eventEnvelope.offset.asInstanceOf[SpannerOffset]
@@ -94,13 +99,6 @@ final class SpannerReadJournal(system: ExtendedActorSystem, config: Config, cfgP
       1, // the same row comes back and is filtered due to how the offset works
       settings.querySettings.refreshInterval
     )
-  }
-
-  private def toSpannerOffset(offset: Offset) = offset match {
-    case NoOffset => SpannerOffset(Schema.Journal.NoOffset, Map.empty)
-    case so: SpannerOffset => so
-    case _ =>
-      throw new IllegalArgumentException(s"Spanner Read Journal does not support offset type: " + offset.getClass)
   }
 
   override def currentPersistenceIds(): Source[String, NotUsed] = {
@@ -172,7 +170,7 @@ final class SpannerReadJournal(system: ExtendedActorSystem, config: Config, cfgP
         ),
         paramTypes = SpannerReadJournal.EventsByPersistenceIdTypes
       )
-      .statefulMapConcat(deserializeAndAddOffset(SpannerOffset(Schema.Journal.NoOffset, Map.empty)))
+      .statefulMapConcat(deserializeAndAddOffset(SpannerOffset(SpannerUtils.SpannerNoOffset, Map.empty)))
       .mapMaterializedValue(_ => NotUsed)
   }
 

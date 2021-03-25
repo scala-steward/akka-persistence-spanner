@@ -214,7 +214,8 @@ trait SpannerLifecycle
          SpannerSnapshotInteractions.Schema.Snapshots.snapshotTable(spannerSettings) :: Nil
        else Nil) ++
       (if (withObjectStore)
-         SpannerObjectInteractions.Schema.Objects.objectTable(spannerSettings) :: Nil
+         SpannerObjectInteractions.Schema.Objects.objectTable(spannerSettings) ::
+         SpannerObjectInteractions.Schema.Objects.objectsByTypeOffsetIndex(spannerSettings) :: Nil
        else Nil)
     dbSchemas.foreach(log.debug(_))
 
