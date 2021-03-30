@@ -25,6 +25,9 @@ import scala.concurrent.Future
 class SpannerObjectStore(interactions: SpannerObjectInteractions) {
   import SpannerObjectStore._
 
+  /**
+   * @param seqNr sequence number for optimistic locking. starts at 1.
+   */
   def upsertObject(
       entityType: String,
       persistenceId: PersistenceId,

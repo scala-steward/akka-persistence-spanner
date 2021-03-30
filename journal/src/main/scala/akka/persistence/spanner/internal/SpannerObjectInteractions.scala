@@ -122,6 +122,9 @@ private[spanner] final class SpannerObjectInteractions(
       Objects.OldSeqNr
     ).toMap
 
+  /**
+   * @param seqNr sequence number for optimistic locking. starts at 1.
+   */
   def upsertObject(
       entity: String,
       persistenceId: PersistenceId,
@@ -129,11 +132,13 @@ private[spanner] final class SpannerObjectInteractions(
       serManifest: String,
       value: ByteString,
       seqNr: Long
-  ): Future[Unit] =
+  ): Future[Unit] = {
+    require(seqNr > 0, "Sequence number should start at 1")
     spannerGrpcClient.withSession(session => {
-      if (seqNr == 0) insertFirst(entity, persistenceId, serId, serManifest, value, seqNr, session)
+      if (seqNr == 1) insertFirst(entity, persistenceId, serId, serManifest, value, seqNr, session)
       else update(entity, persistenceId, serId, serManifest, value, seqNr, session)
     })
+  }
 
   private object CommitTimestamp
 
