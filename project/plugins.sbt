@@ -10,7 +10,7 @@ addSbtPlugin("com.lightbend" % "sbt-whitesource" % "0.1.18")
 
 // for releasing
 addSbtPlugin("com.dwijnand" % "sbt-dynver" % "4.0.0")
-addSbtPlugin("org.foundweekends" % "sbt-bintray" % "0.5.5")
+addSbtPlugin("org.foundweekends" % "sbt-bintray" % "0.5.6")
 
 //// docs
 addSbtPlugin("com.lightbend.paradox" % "sbt-paradox-dependencies" % "0.2.1")
