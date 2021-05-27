@@ -8,8 +8,7 @@ addSbtPlugin("com.lightbend.sbt" % "sbt-java-formatter" % "0.4.4")
 addSbtPlugin("com.lightbend" % "sbt-whitesource" % "0.1.18")
 
 // for releasing
-addSbtPlugin("com.dwijnand" % "sbt-dynver" % "4.0.0")
-addSbtPlugin("org.foundweekends" % "sbt-bintray" % "0.5.5")
+addSbtPlugin("com.geirsson" % "sbt-ci-release" % "1.5.7")
 
 //// docs
 addSbtPlugin("com.lightbend.paradox" % "sbt-paradox-dependencies" % "0.2.1")
