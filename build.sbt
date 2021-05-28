@@ -1,4 +1,5 @@
 import sbt.Keys.parallelExecution
+import xerial.sbt.Sonatype.autoImport.sonatypeProfileName
 
 inThisBuild(
   Seq(
@@ -35,9 +36,7 @@ def common: Seq[Setting[_]] = Seq(
   scalaVersion := Dependencies.Scala212,
   crossVersion := CrossVersion.binary,
   scalafmtOnCompile := true,
-  bintrayOrganization := Some("akka"),
-  bintrayPackage := "akka-persistence-spanner",
-  bintrayRepository := (if (isSnapshot.value) "snapshots" else "maven"),
+  sonatypeProfileName := "com.lightbend",
   // Setting javac options in common allows IntelliJ IDEA to import them automatically
   javacOptions in compile ++= Seq(
       "-encoding",
