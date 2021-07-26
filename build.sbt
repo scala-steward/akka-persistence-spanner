@@ -148,6 +148,6 @@ lazy val docs = project
         "scaladoc.com.typesafe.config.base_url" -> s"https://lightbend.github.io/config/latest/api/"
       ),
     resolvers += Resolver.jcenterRepo,
-    publishRsyncArtifact := makeSite.value -> "www/",
+    publishRsyncArtifacts += makeSite.value -> "www/",
     publishRsyncHost := "akkarepo@gustav.akka.io"
   )
