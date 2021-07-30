@@ -6,9 +6,9 @@ import sbt._
 
 object Dependencies {
   val Scala212 = "2.12.14"
-  val Scala213 = "2.13.6"
-
-  val AkkaVersion = System.getProperty("override.akka.version", "2.6.9")
+  val Scala213 = "2.13.1"
+  // FIXME
+  val AkkaVersion = "2.6.15+34-942982a9-SNAPSHOT" //System.getProperty("override.akka.version", "2.6.9")
   val AkkaVersionInDocs = AkkaVersion.take(3)
   // for example
   val AkkaHttpVersion = "10.2.3"
@@ -16,7 +16,7 @@ object Dependencies {
 
   val SpannerVersion = "1.52.0"
   val GrpcVersion = akka.grpc.gen.BuildInfo.grpcVersion
-  val GoogleAuthVersion = "0.26.0"
+  val GoogleAuthVersion = "0.27.0"
 
   object Compile {
     val akkaActorTyped = "com.typesafe.akka" %% "akka-actor-typed" % AkkaVersion

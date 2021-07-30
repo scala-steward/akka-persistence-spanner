@@ -4,18 +4,19 @@
 
 package akka.persistence.spanner
 
-import akka.annotation.InternalApi
+import akka.annotation.InternalStableApi
 import akka.persistence.spanner.SpannerSettings.SessionPoolSettings
-import com.typesafe.config.Config
 import akka.util.JavaDurationConverters._
+import com.typesafe.config.Config
 
+import scala.util.Try
 import scala.concurrent.duration.FiniteDuration
 
 /**
  * INTERNAL API
  */
-@InternalApi
-private[spanner] object SpannerSettings {
+@InternalStableApi
+object SpannerSettings {
   final class SessionPoolSettings(config: Config) {
     val maxSize = config.getInt("max-size")
     // Spanner only supports 100 sessions per gRPC channel. We'd need multiple channels to support
@@ -37,15 +38,19 @@ private[spanner] object SpannerSettings {
   }
 }
 
-private[spanner] final class QuerySettings(config: Config) {
+/**
+ * INTERNAL API
+ */
+@InternalStableApi
+final class QuerySettings(config: Config) {
   val refreshInterval: FiniteDuration = config.getDuration("refresh-interval").asScala
 }
 
 /**
  * INTERNAL API
  */
-@InternalApi
-private[spanner] final class SpannerSettings(config: Config) {
+@InternalStableApi
+final class SpannerSettings(config: Config) {
   val project = config.getString("project")
   val instance = config.getString("instance")
   val database = config.getString("database")
@@ -64,7 +69,8 @@ private[spanner] final class SpannerSettings(config: Config) {
   val snapshotsTable = config.getString("snapshot.table")
 
   // Object store to (eventually) back durable actors
-  val objectTable = config.getString("object.table")
+  val objectTable =
+    Try(config.getString("durable-state-store.table")).toOption.getOrElse(config.getString("object.table"))
 
   val sessionPool = new SessionPoolSettings(config.getConfig("session-pool"))
   val sessionAcquisitionTimeout = config.getDuration("session-acquisition-timeout").asScala
