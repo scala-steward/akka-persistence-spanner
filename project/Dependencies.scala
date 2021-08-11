@@ -8,7 +8,7 @@ object Dependencies {
   val Scala212 = "2.12.14"
   val Scala213 = "2.13.1"
   // FIXME
-  val AkkaVersion = "2.6.15+34-942982a9-SNAPSHOT" //System.getProperty("override.akka.version", "2.6.9")
+  val AkkaVersion = "2.6.15+122-59eabdd2-SNAPSHOT" //System.getProperty("override.akka.version", "2.6.9")
   val AkkaVersionInDocs = AkkaVersion.take(3)
   // for example
   val AkkaHttpVersion = "10.2.3"
