@@ -6,10 +6,13 @@ package akka.persistence.spanner.state.javadsl
 
 import java.util.Optional
 import java.util.concurrent.CompletionStage
+
 import scala.compat.java8.FutureConverters._
 import scala.concurrent.ExecutionContext
+
 import akka.Done
 import akka.NotUsed
+import akka.annotation.ApiMayChange
 import akka.persistence.query.DurableStateChange
 import akka.persistence.query.Offset
 import akka.persistence.query.javadsl.DurableStateStoreQuery
@@ -22,6 +25,10 @@ object SpannerDurableStateStore {
   val Identifier = ScalaSpannerDurableStateStore.Identifier
 }
 
+/**
+ * API May Change
+ */
+@ApiMayChange
 class SpannerDurableStateStore[A](scalaStore: akka.persistence.spanner.state.scaladsl.SpannerDurableStateStore[A])(
     implicit ec: ExecutionContext
 ) extends DurableStateUpdateStore[A]
