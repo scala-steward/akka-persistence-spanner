@@ -20,13 +20,13 @@ class SpannerClientSpec extends SpannerSpec {
       val pid = PersistenceId("size", "1")
       objectInteractions
         .upsertObject(
-          "entity-1",
           pid,
           666L,
           "nah",
           // 10mb, spanner request limit
           ByteString.fromArrayUnsafe(Array.tabulate[Byte](10485760)(_.toByte)),
-          1L
+          1L,
+          "entity-1"
         )
         .futureValue
 

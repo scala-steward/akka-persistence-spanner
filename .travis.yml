@@ -28,8 +28,6 @@ script:
 
 jobs:
   include:
-#    - stage: whitesource
-#      script: sbt whitesourceCheckPolicies whitesourceUpdate
 
     - stage: check
       script: sbt headerCheck test:headerCheck || { echo "[error] Missing license headers found. Please run 'headerCreate' and commit the updated code."; false; }
@@ -59,10 +57,6 @@ stages:
 
   - name: test
     if: NOT tag =~ ^v
-
-  # runs on main repo master commits and version-tagged commits
-  - name: whitesource
-    if: repo = akka/akka-persistence-spanner AND ( ( branch = master AND type = push ) OR tag =~ ^v )
 
 before_cache:
   - find $HOME/.ivy2/ -name "ivydata-*.properties" -print -delete

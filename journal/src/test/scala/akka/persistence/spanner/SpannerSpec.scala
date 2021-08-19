@@ -215,7 +215,6 @@ trait SpannerLifecycle
        else Nil) ++
       (if (withObjectStore)
          SpannerObjectInteractions.Schema.Objects.objectTable(spannerSettings) ::
-         SpannerObjectInteractions.Schema.Objects.objectsByTypeOffsetIndex(spannerSettings) ::
          SpannerObjectInteractions.Schema.Objects.objectsByTagOffsetIndex(spannerSettings) :: Nil
        else Nil)
     dbSchemas.foreach(log.debug(_))

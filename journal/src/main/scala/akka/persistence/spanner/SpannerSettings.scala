@@ -69,8 +69,8 @@ final class SpannerSettings(config: Config) {
   val snapshotsTable = config.getString("snapshot.table")
 
   // Object store to (eventually) back durable actors
-  val objectTable =
-    Try(config.getString("durable-state-store.table")).toOption.getOrElse(config.getString("object.table"))
+  val objectTable = config.getString("durable-state-store.table")
+  val objectTableTagColumn = config.getString("durable-state-store.tag-column")
 
   val sessionPool = new SessionPoolSettings(config.getConfig("session-pool"))
   val sessionAcquisitionTimeout = config.getDuration("session-acquisition-timeout").asScala
