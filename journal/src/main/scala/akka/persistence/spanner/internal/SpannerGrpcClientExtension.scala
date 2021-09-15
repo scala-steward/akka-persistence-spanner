@@ -40,9 +40,10 @@ final class SpannerGrpcClientExtension(system: ActorSystem[_]) extends Extension
   private implicit val classic = system.toClassic
   private implicit val ec: ExecutionContext = system.executionContext
 
-  CoordinatedShutdown(system.toClassic).addTask("service-requests-done", "shutdown-grpc-clients") { () =>
-    Future.traverse(sessions.values().asScala)(_.shutdown()).map(_ => Done)
-  }
+  CoordinatedShutdown(system.toClassic)
+    .addTask(CoordinatedShutdown.PhaseBeforeActorSystemTerminate, "shutdown-spanner-grpc-clients") { () =>
+      Future.traverse(sessions.values().asScala)(_.shutdown()).map(_ => Done)
+    }
 
   def clientFor(configLocation: String): SpannerGrpcClient =
     sessions.computeIfAbsent(
