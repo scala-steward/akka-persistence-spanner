@@ -51,7 +51,6 @@ jobs:
       if: type = cron
 
 stages:
-  # runs on master commits and PRs
   - name: check
     if: NOT tag =~ ^v
 
