@@ -33,8 +33,8 @@ inThisBuild(
 
 def common: Seq[Setting[_]] =
   Seq(
-    crossScalaVersions := Seq(Dependencies.Scala213, Dependencies.Scala212),
-    scalaVersion := Dependencies.Scala212,
+    crossScalaVersions := Seq(Dependencies.Scala213),
+    scalaVersion := Dependencies.Scala213,
     crossVersion := CrossVersion.binary,
     scalafmtOnCompile := true,
     sonatypeProfileName := "com.lightbend",
@@ -115,7 +115,7 @@ lazy val docs = project
   .settings(
     name := "Akka Persistence Spanner",
     (Compile / paradox) := (Compile / paradox).dependsOn(root / dumpSchema).value,
-    crossScalaVersions := Seq(Dependencies.Scala212),
+    crossScalaVersions := Seq(Dependencies.Scala213),
     previewPath := (Paradox / siteSubdirName).value,
     Paradox / siteSubdirName := s"docs/akka-persistence-spanner/${projectInfoVersion.value}",
     paradoxGroups := Map("Language" -> Seq("Java", "Scala")),

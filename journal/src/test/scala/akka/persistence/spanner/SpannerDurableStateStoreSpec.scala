@@ -17,7 +17,7 @@ import akka.stream.scaladsl.Sink
 import akka.stream.testkit.scaladsl.TestSink
 import akka.util.ByteString
 
-class SpannerDurableStateStoreSpec extends SpannerSpec("SpannerDurableStateStoreSpec") {
+class SpannerDurableStateStoreSpec extends SpannerSpec {
   override def withObjectStore: Boolean = true
 
   val store = DurableStateStoreRegistry(testKit.system)

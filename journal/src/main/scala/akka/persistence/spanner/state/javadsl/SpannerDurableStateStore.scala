@@ -7,7 +7,7 @@ package akka.persistence.spanner.state.javadsl
 import java.util.Optional
 import java.util.concurrent.CompletionStage
 
-import scala.compat.java8.FutureConverters._
+import scala.jdk.FutureConverters.FutureOps
 import scala.concurrent.ExecutionContext
 
 import akka.Done
@@ -34,17 +34,16 @@ class SpannerDurableStateStore[A](scalaStore: akka.persistence.spanner.state.sca
 ) extends DurableStateUpdateStore[A]
     with DurableStateStoreQuery[A] {
   def getObject(persistenceId: String): CompletionStage[GetObjectResult[A]] =
-    toJava(
-      scalaStore
-        .getObject(persistenceId)
-        .map(x => GetObjectResult(Optional.ofNullable(x.value.getOrElse(null.asInstanceOf[A])), x.revision))
-    )
+    scalaStore
+      .getObject(persistenceId)
+      .map(x => GetObjectResult(Optional.ofNullable(x.value.getOrElse(null.asInstanceOf[A])), x.revision))
+      .asJava
 
   def upsertObject(persistenceId: String, revision: Long, value: A, tag: String): CompletionStage[Done] =
-    toJava(scalaStore.upsertObject(persistenceId, revision, value, tag))
+    scalaStore.upsertObject(persistenceId, revision, value, tag).asJava
 
   def deleteObject(persistenceId: String): CompletionStage[Done] =
-    toJava(scalaStore.deleteObject(persistenceId))
+    scalaStore.deleteObject(persistenceId).asJava
 
   def currentChanges(tag: String, offset: Offset): Source[DurableStateChange[A], NotUsed] =
     scalaStore.currentChanges(tag, offset).asJava
