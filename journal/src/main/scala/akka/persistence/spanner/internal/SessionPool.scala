@@ -137,20 +137,23 @@ private[spanner] object SessionPool {
           val newRemaining = remainingSessions - id
           if (newRemaining.isEmpty) {
             if (ctx.log.isInfoEnabled) {
-              ctx.log.info("All sessions returned. Shutting down. {}", newSessions.map(_.name))
+              ctx.log.info("All sessions returned. Shutting down [{}] sessions.", newSessions.size)
             }
-            done.tryCompleteWith(cleanupOldSessions(client, newSessions)(ctx.executionContext))
+            done.completeWith(cleanupOldSessions(client, newSessions)(ctx.executionContext))
             Behaviors.stopped
           } else {
-            ctx.log.info("Still waiting on sessions to return: {}", newRemaining.keys)
+            ctx.log.info("Still waiting on [{}] sessions to return", newRemaining.size)
             shuttingDown(done, client, newSessions, newRemaining)
           }
         case ShutdownTimeout =>
           val toShutdown = idleSessions ++ remainingSessions.values
           if (ctx.log.isInfoEnabled) {
-            ctx.log.info("Timed out waiting for sessions to be returned. Shutting down now. {}", toShutdown.map(_.name))
+            ctx.log.info(
+              "Timed out waiting for sessions to be returned. Shutting down [{}] sessions now. Remaining sessions [{}]",
+              remainingSessions.valuesIterator.map(_.name).mkString(", ")
+            )
           }
-          done.tryCompleteWith(cleanupOldSessions(client, toShutdown)(ctx.executionContext))
+          done.completeWith(cleanupOldSessions(client, toShutdown)(ctx.executionContext))
           Behaviors.stopped
       }
     }
@@ -336,10 +339,14 @@ private[spanner] final class SessionPool(
 
   override def onSignal: PartialFunction[Signal, Behavior[Command]] = {
     case PostStop =>
-      cleanupOldSessions(client, availableSessions.map(_.session).toList ++ inUseSessions.values)(ctx.executionContext)
+      val toShutdown = availableSessions.map(_.session).toList ++ inUseSessions.values
+      ctx.log.info("Shutting down [{}] sessions from PostStop.", toShutdown.size)
+      cleanupOldSessions(client, toShutdown)(ctx.executionContext)
       Behaviors.same
     case PreRestart =>
-      cleanupOldSessions(client, availableSessions.map(_.session).toList ++ inUseSessions.values)(ctx.executionContext)
+      val toShutdown = availableSessions.map(_.session).toList ++ inUseSessions.values
+      ctx.log.info("Shutting down [{}] sessions from PreRestart.", toShutdown.size)
+      cleanupOldSessions(client, toShutdown)(ctx.executionContext)
       Behaviors.same
   }
 
