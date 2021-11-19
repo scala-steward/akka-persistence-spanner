@@ -2,7 +2,7 @@ addSbtPlugin("com.lightbend.akka.grpc" % "sbt-akka-grpc" % "2.1.0")
 
 addSbtPlugin("de.heikoseeberger" % "sbt-header" % "5.2.0") // for maintenance of copyright file header
 addSbtPlugin("org.scalameta" % "sbt-scalafmt" % "2.4.4")
-addSbtPlugin("com.lightbend.sbt" % "sbt-java-formatter" % "0.4.4")
+addSbtPlugin("com.lightbend.sbt" % "sbt-java-formatter" % "0.7.0")
 
 // for releasing
 addSbtPlugin("com.github.sbt" % "sbt-ci-release" % "1.5.9")
