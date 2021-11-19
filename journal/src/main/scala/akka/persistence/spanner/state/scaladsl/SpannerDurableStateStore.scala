@@ -15,6 +15,7 @@ import akka.persistence.query.DurableStateChange
 import akka.persistence.query.Offset
 import akka.persistence.query.UpdatedDurableState
 import akka.persistence.query.scaladsl.DurableStateStoreQuery
+import akka.persistence.query.scaladsl.DurableStateStorePagedPersistenceIdsQuery
 import akka.persistence.spanner.internal
 import akka.persistence.spanner.internal.SpannerObjectInteractions
 import akka.persistence.state.scaladsl.DurableStateUpdateStore
@@ -38,7 +39,8 @@ class SpannerDurableStateStore[A](
     serialization: Serialization,
     implicit val executionContext: ExecutionContext
 ) extends DurableStateUpdateStore[A]
-    with DurableStateStoreQuery[A] {
+    with DurableStateStoreQuery[A]
+    with DurableStateStorePagedPersistenceIdsQuery[A] {
   def getObject(persistenceId: String): Future[GetObjectResult[A]] =
     interactions.getObject(PersistenceId.ofUniqueId(persistenceId)).flatMap {
       case Some(r) =>
@@ -97,8 +99,11 @@ class SpannerDurableStateStore[A](
    *               Any other offsets are invalid.
    * @return A source of change events.
    */
-  def changes(tag: String, offset: Offset): Source[DurableStateChange[A], NotUsed] =
+  override def changes(tag: String, offset: Offset): Source[DurableStateChange[A], NotUsed] =
     interactions.changesByTag(tag, offset).map(change => toDurableStateChange(change))
+
+  override def currentPersistenceIds(afterId: Option[String], limit: Long): Source[String, NotUsed] =
+    interactions.currentPersistenceIds(afterId, limit)
 
   private def toDurableStateChange(change: internal.SpannerObjectInteractions.Change): DurableStateChange[A] =
     new UpdatedDurableState[A](

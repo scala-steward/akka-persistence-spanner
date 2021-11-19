@@ -365,6 +365,49 @@ private[spanner] final class SpannerObjectInteractions(spannerGrpcClient: Spanne
     )
   }
 
+  private val LimitedPersistenceIdsSql =
+    s"""SELECT ${Objects.PersistenceId._1}
+       |FROM ${settings.objectTable}
+       |ORDER BY persistence_id
+       |LIMIT @limit""".stripMargin
+
+  private val PagedPersistenceIdsSql =
+    s"""SELECT ${Objects.PersistenceId._1}
+       |FROM ${settings.objectTable}
+       |WHERE ${Objects.PersistenceId._1} > @${Objects.PersistenceId._1}
+       |ORDER BY persistence_id
+       |LIMIT @limit""".stripMargin
+
+  def currentPersistenceIds(afterId: Option[String], limit: Long): Source[String, NotUsed] =
+    (afterId match {
+      case Some(id) =>
+        spannerGrpcClient
+          .streamingQuery(
+            PagedPersistenceIdsSql,
+            params = Some(
+              Struct(
+                Map(
+                  Objects.PersistenceId._1 -> Value(StringValue(id)),
+                  "limit" -> Value(StringValue(limit.toString))
+                )
+              )
+            )
+          )
+      case None =>
+        spannerGrpcClient
+          .streamingQuery(
+            LimitedPersistenceIdsSql,
+            params = Some(
+              Struct(
+                Map(
+                  "limit" -> Value(StringValue(limit.toString))
+                )
+              )
+            )
+          )
+    }).map(row => row.head.getStringValue)
+      .mapMaterializedValue(_ => NotUsed)
+
   private def wrapPersistenceId(persistenceId: PersistenceId) =
     Some(KeySet(List(ListValue(List(wrapValue(Objects.PersistenceId, persistenceId.id))))))
 

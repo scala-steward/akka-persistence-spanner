@@ -10,6 +10,10 @@ import akka.persistence.query.{EventEnvelope, Offset}
 import akka.persistence.spanner.scaladsl
 import akka.stream.javadsl.Source
 
+import scala.jdk.OptionConverters._
+
+import java.util.Optional
+
 object SpannerReadJournal {
   val Identifier = "akka.persistence.spanner.query"
 }
@@ -21,7 +25,8 @@ final class SpannerReadJournal(delegate: scaladsl.SpannerReadJournal)
     with PersistenceIdsQuery
     with CurrentPersistenceIdsQuery
     with CurrentEventsByPersistenceIdQuery
-    with EventsByPersistenceIdQuery {
+    with EventsByPersistenceIdQuery
+    with PagedPersistenceIdsQuery {
   override def currentEventsByTag(tag: String, offset: Offset): Source[EventEnvelope, NotUsed] =
     delegate.currentEventsByTag(tag, offset).asJava
 
@@ -33,6 +38,9 @@ final class SpannerReadJournal(delegate: scaladsl.SpannerReadJournal)
 
   override def currentPersistenceIds(): Source[String, NotUsed] =
     delegate.currentPersistenceIds().asJava
+
+  override def currentPersistenceIds(afterId: Optional[String], limit: Long): Source[String, NotUsed] =
+    delegate.currentPersistenceIds(afterId.toScala, limit).asJava
 
   override def currentEventsByPersistenceId(
       persistenceId: String,
