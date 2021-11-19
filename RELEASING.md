@@ -2,7 +2,6 @@
 		
 You will need permission in sonatype to push to `com.lightbend.akka` groupd ID.
  
- 1. Ask someone in the Akka team to rename the 'akka-persistence-spanner-xx-stable' report in [WhiteSource](https://saas.whitesourcesoftware.com) to reflect the latest version (unfortunately this requires permissions that cannot be shared in a granular way)
  1. Check [closed issues without a milestone](https://github.com/akka/akka-persistence-spanner/issues?utf8=%E2%9C%93&q=is%3Aissue%20is%3Aclosed%20no%3Amilestone) and either assign them the 'upcoming' release milestone or 'invalid'
  1. Create a [new release](https://github.com/akka/akka-persistence-spanner/releases/new) with:
      * the next tag version (e.g. `v0.21`)

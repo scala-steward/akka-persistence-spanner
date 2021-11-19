@@ -4,23 +4,31 @@
 
 package akka.persistence.spanner.internal
 
+import scala.collection.immutable
+import scala.concurrent.ExecutionContext
+import scala.concurrent.Future
+
 import akka.NotUsed
 import akka.actor.ActorSystem
-import akka.annotation.{ApiMayChange, InternalApi}
+import akka.annotation.InternalApi
 import akka.persistence.query.Offset
-import akka.persistence.spanner.{SpannerOffset, SpannerSettings}
-import akka.persistence.spanner.SpannerObjectStore.{Change, Result}
+import akka.persistence.spanner.SpannerOffset
+import akka.persistence.spanner.SpannerSettings
 import akka.persistence.typed.PersistenceId
 import akka.stream.scaladsl.Source
 import akka.util.ByteString
 import com.google.protobuf.struct
+import com.google.protobuf.struct.ListValue
+import com.google.protobuf.struct.Struct
+import com.google.protobuf.struct.Value
 import com.google.protobuf.struct.Value.Kind.StringValue
-import com.google.protobuf.struct.{ListValue, Struct, Value}
-import com.google.spanner.v1.{KeySet, Mutation, ReadRequest, Type, TypeCode}
-import io.grpc.{Status, StatusRuntimeException}
-
-import scala.collection.immutable
-import scala.concurrent.{ExecutionContext, Future}
+import com.google.spanner.v1.KeySet
+import com.google.spanner.v1.Mutation
+import com.google.spanner.v1.ReadRequest
+import com.google.spanner.v1.Type
+import com.google.spanner.v1.TypeCode
+import io.grpc.Status
+import io.grpc.StatusRuntimeException
 
 /**
  * INTERNAL API
@@ -30,66 +38,80 @@ object SpannerObjectInteractions {
   object Schema {
     // To back Durable Actors
     object Objects {
-      def objectTable(settings: SpannerSettings): String = objectTable(settings.objectTable)
-      def objectTable(table: String): String =
+      def objectTable(settings: SpannerSettings): String =
+        objectTable(settings.objectTable, settings.objectTableTagColumn)
+
+      def objectTable(table: String, tagColumn: String): String =
         s"""CREATE TABLE $table (
-           |  entity_type STRING(MAX) NOT NULL,
            |  persistence_id STRING(MAX) NOT NULL,
            |  value BYTES(MAX),
            |  ser_id INT64 NOT NULL,
            |  ser_manifest STRING(MAX) NOT NULL,
            |  sequence_nr INT64 NOT NULL,
            |  write_time TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp=true),
+           |  $tagColumn STRING(MAX) NOT NULL
            |) PRIMARY KEY (persistence_id)""".stripMargin
 
-      def objectsByTypeOffsetIndex(settings: SpannerSettings): String = objectsByTypeOffsetIndex(settings.objectTable)
-      def objectsByTypeOffsetIndex(table: String): String =
-        s"""CREATE INDEX ${table}_type_and_offset
+      def objectsByTagOffsetIndex(settings: SpannerSettings): String =
+        objectsByTagOffsetIndex(settings.objectTable, settings.objectTableTagColumn)
+
+      def objectsByTagOffsetIndex(table: String, tagColumn: String): String =
+        s"""CREATE INDEX ${table}_${tagColumn}_and_offset
            |ON $table (
-           |  entity_type,
+           |  $tagColumn,
            |  write_time
            |)""".stripMargin
 
       /** Columns */
-      val EntityType = "entity_type" -> TypeCode.STRING
-      // Key that uniquely identifies an entity instance - typically by concatenating the entity_typef and a unique id
+      // Key that uniquely identifies an entity instance - typically by concatenating the entity type and a unique id
       val PersistenceId = "persistence_id" -> TypeCode.STRING
       val Value = "value" -> TypeCode.BYTES
       val SerId = "ser_id" -> TypeCode.INT64
       val SerManifest = "ser_manifest" -> TypeCode.STRING
       val SeqNr = "sequence_nr" -> TypeCode.INT64
       val WriteTime = "write_time" -> TypeCode.TIMESTAMP
-
-      val Columns = List(EntityType, PersistenceId, SerId, SerManifest, Value, SeqNr, WriteTime)
+      // Tag is defined in SpannerObjectInteractions class because the name is configurable
 
       /** For use in queries: */
       val OldSeqNr = "old_sequence_nr" -> TypeCode.INT64
       val NewSeqNr = "new_sequence_nr" -> TypeCode.INT64
 
       case class ObjectRow(
-          entityType: String,
           persistenceId: String,
           value: ByteString,
           serId: Long,
           serManifest: String,
           sequenceNr: Long,
-          writeTime: String
+          writeTime: String,
+          tag: String
       )
       def deserializeRow(row: Seq[struct.Value]): ObjectRow =
         row match {
-          case Seq(entityType, persistenceId, serId, serManifest, value, sequenceNr, writeTime) =>
+          case Seq(persistenceId, serId, serManifest, value, sequenceNr, writeTime, tag) =>
             ObjectRow(
-              entityType = entityType.getStringValue,
               persistenceId = persistenceId.getStringValue,
               value = ByteString(value.getStringValue).decodeBase64,
               serId = serId.getStringValue.toLong,
               serManifest = serManifest.getStringValue,
               sequenceNr = sequenceNr.getStringValue.toLong,
-              writeTime = writeTime.getStringValue
+              writeTime = writeTime.getStringValue,
+              tag = tag.getStringValue
             )
         }
     }
   }
+
+  case class Change(
+      persistenceId: String,
+      bytes: ByteString,
+      serId: Long,
+      serManifest: String,
+      seqNr: Long,
+      offset: Offset,
+      timestamp: Long
+  )
+
+  case class Result(byteString: ByteString, serId: Long, serManifest: String, seqNr: Long)
 }
 
 /**
@@ -99,18 +121,29 @@ object SpannerObjectInteractions {
  * in future callbacks
  */
 @InternalApi
-private[spanner] final class SpannerObjectInteractions(
-    spannerGrpcClient: SpannerGrpcClient,
-    settings: SpannerSettings
-)(
+private[spanner] final class SpannerObjectInteractions(spannerGrpcClient: SpannerGrpcClient, settings: SpannerSettings)(
     implicit ec: ExecutionContext,
     system: ActorSystem
 ) {
+  import SpannerObjectInteractions.Change
+  import SpannerObjectInteractions.Result
   import SpannerObjectInteractions.Schema.Objects
+
+  val Tag = settings.objectTableTagColumn -> TypeCode.STRING
+
+  val Columns = List(
+    Objects.PersistenceId,
+    Objects.SerId,
+    Objects.SerManifest,
+    Objects.Value,
+    Objects.SeqNr,
+    Objects.WriteTime,
+    Tag
+  )
 
   val SqlUpdate =
     s"UPDATE ${settings.objectTable} SET value = @value, ser_id = @ser_id, ser_manifest = @ser_manifest, " +
-    s"sequence_nr = @new_sequence_nr, write_time = PENDING_COMMIT_TIMESTAMP() " +
+    s"sequence_nr = @new_sequence_nr, write_time = PENDING_COMMIT_TIMESTAMP(), ${settings.objectTableTagColumn} = @${settings.objectTableTagColumn} " +
     s"WHERE persistence_id = @persistence_id AND sequence_nr = @old_sequence_nr"
   val SqlUpdateTypes: Map[String, TypeCode] =
     List(
@@ -119,36 +152,37 @@ private[spanner] final class SpannerObjectInteractions(
       Objects.SerManifest,
       Objects.NewSeqNr,
       Objects.PersistenceId,
-      Objects.OldSeqNr
+      Objects.OldSeqNr,
+      Tag
     ).toMap
 
   /**
    * @param seqNr sequence number for optimistic locking. starts at 1.
    */
   def upsertObject(
-      entity: String,
       persistenceId: PersistenceId,
       serId: Long,
       serManifest: String,
       value: ByteString,
-      seqNr: Long
+      seqNr: Long,
+      tag: String
   ): Future[Unit] = {
     require(seqNr > 0, "Sequence number should start at 1")
     spannerGrpcClient.withSession(session => {
-      if (seqNr == 1) insertFirst(entity, persistenceId, serId, serManifest, value, seqNr, session)
-      else update(entity, persistenceId, serId, serManifest, value, seqNr, session)
+      if (seqNr == 1) insertFirst(persistenceId, serId, serManifest, value, seqNr, tag, session)
+      else update(persistenceId, serId, serManifest, value, seqNr, tag, session)
     })
   }
 
   private object CommitTimestamp
 
   private def insertFirst(
-      entity: String,
       persistenceId: PersistenceId,
       serId: Long,
       serManifest: String,
       value: ByteString,
       seqNr: Long,
+      tag: String,
       session: SessionPool.PooledSession
   ) =
     spannerGrpcClient
@@ -158,15 +192,15 @@ private[spanner] final class SpannerObjectInteractions(
             Mutation.Operation.Insert(
               Mutation.Write(
                 settings.objectTable,
-                Objects.Columns.map(_._1),
-                List(ListValue(Objects.Columns.map {
-                  case Objects.EntityType => wrapValue(Objects.EntityType, entity)
+                Columns.map(_._1),
+                List(ListValue(Columns.map {
                   case Objects.PersistenceId => wrapValue(Objects.PersistenceId, persistenceId)
                   case Objects.SerId => wrapValue(Objects.SerId, serId)
                   case Objects.SerManifest => wrapValue(Objects.SerManifest, serManifest)
                   case Objects.SeqNr => wrapValue(Objects.SeqNr, seqNr)
                   case Objects.Value => wrapValue(Objects.Value, value)
                   case Objects.WriteTime => wrapValue(Objects.WriteTime, CommitTimestamp)
+                  case Tag => wrapValue(Tag, tag)
                   case other => throw new MatchError(other)
                 }))
               )
@@ -178,36 +212,34 @@ private[spanner] final class SpannerObjectInteractions(
         case e: StatusRuntimeException =>
           if (e.getStatus.getCode == Status.Code.ALREADY_EXISTS)
             Future.failed(
-              new IllegalStateException(s"Insert failed: object for persistence id [$persistenceId] already exists")
+              new IllegalStateException(
+                s"Insert failed: object for persistence id [${persistenceId.id}] already exists"
+              )
             )
           else
             Future.failed(e)
       }
 
   private def update(
-      entity: String,
       persistenceId: PersistenceId,
       serId: Long,
       serManifest: String,
       value: ByteString,
       seqNr: Long,
+      tag: String,
       session: SessionPool.PooledSession
   ): Future[Unit] =
     spannerGrpcClient
-      .executeBatchDml(
-        List(
-          (SqlUpdate, Struct(SqlUpdateTypes.map {
-            case Objects.EntityType => wrapNameValue(Objects.EntityType, entity)
-            case Objects.PersistenceId => wrapNameValue(Objects.PersistenceId, persistenceId)
-            case Objects.SerId => wrapNameValue(Objects.SerId, serId)
-            case Objects.SerManifest => wrapNameValue(Objects.SerManifest, serManifest)
-            case Objects.Value => wrapNameValue(Objects.Value, value)
-            case Objects.OldSeqNr => wrapNameValue(Objects.OldSeqNr, seqNr - 1)
-            case Objects.NewSeqNr => wrapNameValue(Objects.NewSeqNr, seqNr)
-            case other => throw new MatchError(other)
-          }), SqlUpdateTypes.mapValues(Type(_)).toMap)
-        )
-      )(session)
+      .executeBatchDml(List((SqlUpdate, Struct(SqlUpdateTypes.map {
+        case Objects.PersistenceId => wrapNameValue(Objects.PersistenceId, persistenceId)
+        case Objects.SerId => wrapNameValue(Objects.SerId, serId)
+        case Objects.SerManifest => wrapNameValue(Objects.SerManifest, serManifest)
+        case Objects.Value => wrapNameValue(Objects.Value, value)
+        case Objects.OldSeqNr => wrapNameValue(Objects.OldSeqNr, seqNr - 1)
+        case Objects.NewSeqNr => wrapNameValue(Objects.NewSeqNr, seqNr)
+        case Tag => wrapNameValue(Tag, tag)
+        case other => throw new MatchError(other)
+      }), SqlUpdateTypes.mapValues(Type(_)).toMap)))(session)
       .map(response => {
         val updated = response.resultSets.head.stats.head.rowCount.rowCountExact.head
         if (updated != 1L)
@@ -250,83 +282,75 @@ private[spanner] final class SpannerObjectInteractions(
     spannerGrpcClient.withSession(session => {
       spannerGrpcClient.write(
         Seq(
-          Mutation(
-            Mutation.Operation.Delete(
-              Mutation.Delete(
-                settings.objectTable,
-                wrapPersistenceId(persistenceId)
-              )
-            )
-          )
+          Mutation(Mutation.Operation.Delete(Mutation.Delete(settings.objectTable, wrapPersistenceId(persistenceId))))
         )
       )(session)
     })
 
-  private val ObjectChangesSql =
-    s"""SELECT ${Objects.Columns.map(_._1).mkString(", ")}
+  private val ObjectChangesSqlByTag =
+    s"""SELECT ${Columns.map(_._1).mkString(", ")}
        |FROM ${settings.objectTable}
-       |WHERE entity_type = @entity_type
+       |WHERE ${settings.objectTableTagColumn} = @${settings.objectTableTagColumn}
        |AND write_time >= @write_time
        |ORDER BY write_time, persistence_id""".stripMargin
 
-  @ApiMayChange
-  def currentChanges(entityType: String, offset: Offset): Source[Change, NotUsed] = {
+  private def deserializeAndAddOffset(spannerOffset: SpannerOffset): () => Seq[Value] => immutable.Iterable[Change] = {
+    () =>
+      var currentTimestamp: String = spannerOffset.commitTimestamp
+      var currentSequenceNrs: Map[String, Long] = spannerOffset.seen
+      row => {
+        def objectToChange(offset: SpannerOffset, obj: Objects.ObjectRow): Change =
+          Change(
+            persistenceId = obj.persistenceId,
+            bytes = obj.value,
+            serId = obj.serId,
+            serManifest = obj.serManifest,
+            seqNr = obj.sequenceNr,
+            offset = offset,
+            timestamp = SpannerUtils.spannerTimestampToUnixMillis(obj.writeTime)
+          )
+
+        val obj = Objects.deserializeRow(row)
+        if (obj.writeTime == currentTimestamp) {
+          // has this already been seen?
+          if (currentSequenceNrs.get(obj.persistenceId).exists(_ >= obj.sequenceNr)) {
+            Nil
+          } else {
+            currentSequenceNrs = currentSequenceNrs.updated(obj.persistenceId, obj.sequenceNr)
+            val offset = SpannerOffset(obj.writeTime, currentSequenceNrs)
+            objectToChange(offset, obj) :: Nil
+          }
+        } else {
+          // ne timestamp, reset currentSequenceNrs
+          currentTimestamp = obj.writeTime
+          currentSequenceNrs = Map(obj.persistenceId -> obj.sequenceNr)
+          val offset = SpannerOffset(obj.writeTime, currentSequenceNrs)
+          objectToChange(offset, obj) :: Nil
+        }
+      }
+  }
+
+  def currentChangesByTag(tag: String, offset: Offset): Source[Change, NotUsed] = {
     val spannerOffset = SpannerUtils.toSpannerOffset(offset)
     spannerGrpcClient
       .streamingQuery(
-        ObjectChangesSql,
+        ObjectChangesSqlByTag,
         params = Some(
           Struct(
             Map(
-              "entity_type" -> Value(StringValue(entityType)),
+              settings.objectTableTagColumn -> Value(StringValue(tag)),
               "write_time" -> Value(StringValue(spannerOffset.commitTimestamp))
             )
           )
         ),
-        paramTypes = Map("entity_type" -> Type(TypeCode.STRING), "write_time" -> Type(TypeCode.TIMESTAMP))
+        paramTypes =
+          Map(settings.objectTableTagColumn -> Type(TypeCode.STRING), "write_time" -> Type(TypeCode.TIMESTAMP))
       )
       .statefulMapConcat(deserializeAndAddOffset(spannerOffset))
       .mapMaterializedValue(_ => NotUsed)
   }
 
-  private def deserializeAndAddOffset(
-      spannerOffset: SpannerOffset
-  ): () => Seq[Value] => immutable.Iterable[Change] = { () =>
-    var currentTimestamp: String = spannerOffset.commitTimestamp
-    var currentSequenceNrs: Map[String, Long] = spannerOffset.seen
-    row => {
-      def objectToChange(offset: SpannerOffset, obj: Objects.ObjectRow): Change =
-        Change(
-          persistenceId = obj.persistenceId,
-          bytes = obj.value,
-          serId = obj.serId,
-          serManifest = obj.serManifest,
-          seqNr = obj.sequenceNr,
-          offset = offset
-        )
-
-      val obj = Objects.deserializeRow(row)
-      if (obj.writeTime == currentTimestamp) {
-        // has this already been seen?
-        if (currentSequenceNrs.get(obj.persistenceId).exists(_ >= obj.sequenceNr)) {
-          Nil
-        } else {
-          currentSequenceNrs = currentSequenceNrs.updated(obj.persistenceId, obj.sequenceNr)
-          val offset = SpannerOffset(obj.writeTime, currentSequenceNrs)
-          objectToChange(offset, obj) :: Nil
-        }
-      } else {
-        // ne timestamp, reset currentSequenceNrs
-        currentTimestamp = obj.writeTime
-        currentSequenceNrs = Map(obj.persistenceId -> obj.sequenceNr)
-        val offset = SpannerOffset(obj.writeTime, currentSequenceNrs)
-        objectToChange(offset, obj) :: Nil
-      }
-    }
-  }
-
-  @ApiMayChange
-  def changes(entityType: String, offset: Offset): Source[Change, NotUsed] = {
+  def changesByTag(tag: String, offset: Offset): Source[Change, NotUsed] = {
     val initialOffset = SpannerUtils.toSpannerOffset(offset)
 
     def nextOffset(previousOffset: SpannerOffset, change: Change): SpannerOffset =
@@ -335,7 +359,7 @@ private[spanner] final class SpannerObjectInteractions(
     ContinuousQuery[SpannerOffset, Change](
       initialOffset,
       nextOffset,
-      offset => Some(currentChanges(entityType, offset)),
+      offset => Some(currentChangesByTag(tag, offset)),
       1, // the same row comes back and is filtered due to how the offset works
       settings.querySettings.refreshInterval
     )

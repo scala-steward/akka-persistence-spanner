@@ -5,10 +5,8 @@
 import sbt._
 
 object Dependencies {
-  val Scala212 = "2.12.11"
-  val Scala213 = "2.13.1"
-
-  val AkkaVersion = System.getProperty("override.akka.version", "2.6.9")
+  val Scala213 = "2.13.6"
+  val AkkaVersion = System.getProperty("override.akka.version", "2.6.16")
   val AkkaVersionInDocs = AkkaVersion.take(3)
   // for example
   val AkkaHttpVersion = "10.2.3"
@@ -16,7 +14,7 @@ object Dependencies {
 
   val SpannerVersion = "1.52.0"
   val GrpcVersion = akka.grpc.gen.BuildInfo.grpcVersion
-  val GoogleAuthVersion = "0.20.0"
+  val GoogleAuthVersion = "0.27.0"
 
   object Compile {
     val akkaActorTyped = "com.typesafe.akka" %% "akka-actor-typed" % AkkaVersion
@@ -45,7 +43,7 @@ object Dependencies {
     val googleAuth = "com.google.auth" % "google-auth-library-oauth2-http" % GoogleAuthVersion // "BSD 3-Clause"
 
     val hdrHistogram = "org.hdrhistogram" % "HdrHistogram" % "2.1.12" // public domain / CC0 / BSD 2
-    val logback = "ch.qos.logback" % "logback-classic" % "1.2.3" // EPL 1.0 / LGPL 2.1
+    val logback = "ch.qos.logback" % "logback-classic" % "1.2.7" // EPL 1.0 / LGPL 2.1
   }
 
   object TestDeps {
@@ -97,12 +95,6 @@ object Dependencies {
     Compile.hdrHistogram
   )
 
-  val testkit = Seq(
-    scalaTest,
-    akkaTestkit,
-    akkaPersistenceTyped % Test,
-    TestDeps.logback,
-    TestDeps.junit,
-    TestDeps.junitInterface
-  )
+  val testkit =
+    Seq(scalaTest, akkaTestkit, akkaPersistenceTyped % Test, TestDeps.logback, TestDeps.junit, TestDeps.junitInterface)
 }
