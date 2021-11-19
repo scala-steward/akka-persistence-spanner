@@ -5,8 +5,10 @@
 import sbt._
 
 object Dependencies {
-  val Scala213 = "2.13.7"
-  val AkkaVersion = System.getProperty("override.akka.version", "2.6.16")
+  val Scala213 = "2.13.6"
+  // Snapshot primarily to get access to
+  // https://github.com/akka/akka/pull/30811
+  val AkkaVersion = System.getProperty("override.akka.version", "2.6.17+55-bdb46d16-SNAPSHOT")
   val AkkaVersionInDocs = AkkaVersion.take(3)
   // for example
   val AkkaHttpVersion = "10.2.3"
@@ -43,7 +45,7 @@ object Dependencies {
     val googleAuth = "com.google.auth" % "google-auth-library-oauth2-http" % GoogleAuthVersion // "BSD 3-Clause"
 
     val hdrHistogram = "org.hdrhistogram" % "HdrHistogram" % "2.1.12" // public domain / CC0 / BSD 2
-    val logback = "ch.qos.logback" % "logback-classic" % "1.2.6" // EPL 1.0 / LGPL 2.1
+    val logback = "ch.qos.logback" % "logback-classic" % "1.2.7" // EPL 1.0 / LGPL 2.1
   }
 
   object TestDeps {

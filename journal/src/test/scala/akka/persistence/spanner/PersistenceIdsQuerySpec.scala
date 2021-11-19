@@ -17,6 +17,7 @@ class PersistenceIdsQuerySpec extends SpannerSpec {
 
   val pid1 = nextPid
   val pid2 = nextPid
+  val pid3 = nextPid
   val probe = testKit.createTestProbe[Done]
 
   override protected def beforeAll(): Unit = {
@@ -25,13 +26,34 @@ class PersistenceIdsQuerySpec extends SpannerSpec {
     probe.expectMessage(Done)
     testKit.spawn(TestActors.Persister(pid2)) ! PersistMe("dog", probe.ref)
     probe.expectMessage(Done)
+    testKit.spawn(TestActors.Persister(pid3)) ! PersistMe("giraffe", probe.ref)
+    probe.expectMessage(Done)
   }
 
   "currentPersistenceIds" must {
     "work" in {
       val pids = query.currentPersistenceIds().runWith(Sink.seq).futureValue
-      pids.size shouldEqual 2
-      pids.toSet shouldEqual Set(pid1, pid2)
+      pids.size shouldEqual 3
+      pids.toSet shouldEqual Set(pid1, pid2, pid3)
+    }
+    "work with paging" in {
+      val store = PersistenceQuery(testKit.system).readJournalFor[SpannerReadJournal](SpannerReadJournal.Identifier)
+      val all = store
+        .currentPersistenceIds(None, 1000)
+        .runWith(Sink.seq)
+        .futureValue
+
+      all.size shouldBe >(2)
+      val firstThree = store
+        .currentPersistenceIds(None, 2)
+        .runWith(Sink.seq)
+        .futureValue
+      val others = store
+        .currentPersistenceIds(Some(firstThree.last), 1000)
+        .runWith(Sink.seq)
+        .futureValue
+
+      (firstThree ++ others) should contain theSameElementsAs (all)
     }
   }
 
@@ -41,16 +63,16 @@ class PersistenceIdsQuerySpec extends SpannerSpec {
 
       val pids = query.persistenceIds().runWith(TestSink.probe)
       pids.request(10)
-      pids.expectNextN(2).toSet shouldEqual Set(pid1, pid2) // the two from setup
+      pids.expectNextN(3).toSet shouldEqual Set(pid1, pid2, pid3) // the three from setup
       pids.expectNoMessage()
 
-      val pid3 = nextPid
       val pid4 = nextPid
-      testKit.spawn(TestActors.Persister(pid3)) ! PersistMe("cat", probe.ref)
-      testKit.spawn(TestActors.Persister(pid4)) ! PersistMe("dog", probe.ref)
+      val pid5 = nextPid
+      testKit.spawn(TestActors.Persister(pid4)) ! PersistMe("cat", probe.ref)
+      testKit.spawn(TestActors.Persister(pid5)) ! PersistMe("dog", probe.ref)
 
-      // should not get pid1 and pid2 again
-      pids.expectNextN(2).toSet shouldEqual Set(pid3, pid4)
+      // should not get pid1, pid2 and pid3 again
+      pids.expectNextN(2).toSet shouldEqual Set(pid4, pid5)
       pids.expectNoMessage()
       pids.cancel()
     }

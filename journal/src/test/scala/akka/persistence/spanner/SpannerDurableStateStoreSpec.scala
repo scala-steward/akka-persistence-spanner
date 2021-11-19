@@ -183,5 +183,23 @@ class SpannerDurableStateStoreSpec extends SpannerSpec {
 
       probe.cancel()
     }
+    "fetch persistence ids" in {
+      val all = store
+        .currentPersistenceIds(None, 1000)
+        .runWith(Sink.seq)
+        .futureValue
+
+      all.size shouldBe >(5)
+      val firstThree = store
+        .currentPersistenceIds(None, 3)
+        .runWith(Sink.seq)
+        .futureValue
+      val others = store
+        .currentPersistenceIds(Some(firstThree.last), 1000)
+        .runWith(Sink.seq)
+        .futureValue
+
+      (firstThree ++ others) should contain theSameElementsAs (all)
+    }
   }
 }
