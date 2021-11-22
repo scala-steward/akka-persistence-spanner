@@ -5,7 +5,7 @@ addSbtPlugin("org.scalameta" % "sbt-scalafmt" % "2.4.4")
 addSbtPlugin("com.lightbend.sbt" % "sbt-java-formatter" % "0.7.0")
 
 // for releasing
-addSbtPlugin("com.github.sbt" % "sbt-ci-release" % "1.5.9")
+addSbtPlugin("com.github.sbt" % "sbt-ci-release" % "1.5.10")
 
 //// docs
 addSbtPlugin("com.lightbend.paradox" % "sbt-paradox-dependencies" % "0.2.1")
