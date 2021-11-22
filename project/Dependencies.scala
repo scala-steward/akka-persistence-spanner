@@ -5,7 +5,7 @@
 import sbt._
 
 object Dependencies {
-  val Scala213 = "2.13.6"
+  val Scala213 = "2.13.7"
   // Snapshot primarily to get access to
   // https://github.com/akka/akka/pull/30811
   val AkkaVersion = System.getProperty("override.akka.version", "2.6.17+55-bdb46d16-SNAPSHOT")
