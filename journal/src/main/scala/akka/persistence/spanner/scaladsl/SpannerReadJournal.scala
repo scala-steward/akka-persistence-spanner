@@ -47,7 +47,8 @@ final class SpannerReadJournal(system: ExtendedActorSystem, config: Config, cfgP
     with CurrentPersistenceIdsQuery
     with PersistenceIdsQuery
     with EventsByPersistenceIdQuery
-    with CurrentEventsByPersistenceIdQuery {
+    with CurrentEventsByPersistenceIdQuery
+    with PagedPersistenceIdsQuery {
   private val log = LoggerFactory.getLogger(classOf[SpannerReadJournal])
   private val sharedConfigPath = cfgPath.replaceAll("""\.query$""", "")
   private val settings = new SpannerSettings(system.settings.config.getConfig(sharedConfigPath))
@@ -65,6 +66,19 @@ final class SpannerReadJournal(system: ExtendedActorSystem, config: Config, cfgP
 
   private val PersistenceIdsQuery =
     s"SELECT DISTINCT persistence_id from ${settings.journalTable}"
+
+  private val LimitedPersistenceIdsQuery =
+    s"""SELECT DISTINCT persistence_id
+       |FROM ${settings.journalTable} j
+       |ORDER BY persistence_id
+       |LIMIT @limit""".stripMargin
+
+  private val PagedPersistenceIdsQuery =
+    s"""SELECT DISTINCT persistence_id
+       |FROM ${settings.journalTable} j
+       |WHERE j.persistence_id > @persistence_id
+       |ORDER BY persistence_id
+       |LIMIT @limit""".stripMargin
 
   private val EventsForPersistenceIdSql =
     s"SELECT ${Schema.Journal.Columns.mkString(",")} FROM ${settings.journalTable} WHERE persistence_id = @persistence_id AND sequence_nr >= @from_sequence_Nr AND sequence_nr <= @to_sequence_nr ORDER BY sequence_nr"
@@ -130,6 +144,36 @@ final class SpannerReadJournal(system: ExtendedActorSystem, config: Config, cfgP
       }
     }
   }
+
+  override def currentPersistenceIds(afterId: Option[String], limit: Long): Source[String, NotUsed] =
+    (afterId match {
+      case Some(id) =>
+        grpcClient
+          .streamingQuery(
+            PagedPersistenceIdsQuery,
+            params = Some(
+              Struct(
+                Map(
+                  "persistence_id" -> Value(StringValue(id)),
+                  "limit" -> Value(StringValue(limit.toString))
+                )
+              )
+            )
+          )
+      case None =>
+        grpcClient
+          .streamingQuery(
+            LimitedPersistenceIdsQuery,
+            params = Some(
+              Struct(
+                Map(
+                  "limit" -> Value(StringValue(limit.toString))
+                )
+              )
+            )
+          )
+    }).map(row => row.head.getStringValue)
+      .mapMaterializedValue(_ => NotUsed)
 
   override def eventsByPersistenceId(
       persistenceId: String,

@@ -12,7 +12,7 @@ akka.persistence.snapshot-store.plugin = "akka.persistence.spanner.snapshot"
 
 The connection settings are shared with the journal plugin, see Journal Plugin for details.
 
-See [reference.conf](https://github.com/akka/akka-persistence-spanner/blob/master/journal/src/main/resources/reference.conf) for complete configuration option docs and defaults
+See [reference.conf](https://github.com/akka/akka-persistence-spanner/blob/main/journal/src/main/resources/reference.conf) for complete configuration option docs and defaults
 
 ## Schema
 

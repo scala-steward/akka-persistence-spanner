@@ -5,6 +5,7 @@
 package akka.persistence.spanner
 
 import java.util.concurrent.atomic.AtomicLong
+
 import akka.actor.testkit.typed.internal.CapturingAppender
 import akka.actor.testkit.typed.scaladsl.ActorTestKit
 import akka.actor.typed.scaladsl.adapter._
@@ -36,9 +37,10 @@ import org.scalatest.time.{Millis, Seconds, Span}
 import org.scalatest.wordspec.AnyWordSpecLike
 import org.scalatest.{BeforeAndAfterAll, Outcome, Suite}
 import org.slf4j.LoggerFactory
-
 import scala.concurrent.duration._
 import scala.concurrent.{Await, ExecutionContext, Future}
+
+import akka.actor.testkit.typed.internal.TestKitUtils
 
 object SpannerSpec {
   private var instanceCreated = false
@@ -60,17 +62,6 @@ object SpannerSpec {
     }
 
   def realSpanner: Boolean = System.getProperty("akka.spanner.real-spanner", "false").toBoolean
-
-  def getCallerName(clazz: Class[_]): String = {
-    val s = Thread.currentThread.getStackTrace
-      .map(_.getClassName)
-      .dropWhile(_.matches("(java.lang.Thread|.*Abstract.*|akka.persistence.spanner.SpannerSpec\\$|.*SpannerSpec)"))
-    val reduced = s.lastIndexWhere(_ == clazz.getName) match {
-      case -1 => s
-      case z => s.drop(z + 1)
-    }
-    reduced.head.replaceFirst(""".*\.""", "").replaceAll("[^a-zA-Z_0-9]", "_")
-  }
 
   def config(databaseName: String, replicatedMetaEnabled: Boolean = false): Config = {
     val c = ConfigFactory.parseString(s"""
@@ -215,7 +206,7 @@ trait SpannerLifecycle
        else Nil) ++
       (if (withObjectStore)
          SpannerObjectInteractions.Schema.Objects.objectTable(spannerSettings) ::
-         SpannerObjectInteractions.Schema.Objects.objectsByTypeOffsetIndex(spannerSettings) :: Nil
+         SpannerObjectInteractions.Schema.Objects.objectsByTagOffsetIndex(spannerSettings) :: Nil
        else Nil)
     dbSchemas.foreach(log.debug(_))
 
@@ -331,5 +322,5 @@ trait SpannerLifecycle
  *
  * Assumes a locally running spanner, creates and tears down a database.
  */
-abstract class SpannerSpec(override val databaseName: String = SpannerSpec.getCallerName(getClass))
+abstract class SpannerSpec(override val databaseName: String = TestKitUtils.testNameFromCallStack(classOf[SpannerSpec]))
     extends SpannerLifecycle {}
