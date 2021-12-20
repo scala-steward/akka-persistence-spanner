@@ -19,9 +19,8 @@ import scala.concurrent.duration.FiniteDuration
 object SpannerSettings {
   final class SessionPoolSettings(config: Config) {
     val maxSize = config.getInt("max-size")
-    // Spanner only supports 100 sessions per gRPC channel. We'd need multiple channels to support
-    // more
-    require(maxSize <= 100, "session-pool.max-size must be <= 100")
+    // We'd probably need multiple channels to support more
+    require(maxSize <= 500, "session-pool.max-size must be <= 500")
     val retryCreateInterval = config.getDuration("retry-create-interval").asScala
     val maxOutstandingRequests = config.getInt("max-outstanding-requests")
     val restartMinBackoff = config.getDuration("restart-min-backoff").asScala
