@@ -1,4 +1,4 @@
-addSbtPlugin("com.lightbend.akka.grpc" % "sbt-akka-grpc" % "2.1.1")
+addSbtPlugin("com.lightbend.akka.grpc" % "sbt-akka-grpc" % "2.1.2")
 
 addSbtPlugin("de.heikoseeberger" % "sbt-header" % "5.6.0") // for maintenance of copyright file header
 addSbtPlugin("org.scalameta" % "sbt-scalafmt" % "2.4.5")
