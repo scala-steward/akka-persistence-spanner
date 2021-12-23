@@ -43,7 +43,7 @@ object Dependencies {
     val googleAuth = "com.google.auth" % "google-auth-library-oauth2-http" % GoogleAuthVersion // "BSD 3-Clause"
 
     val hdrHistogram = "org.hdrhistogram" % "HdrHistogram" % "2.1.12" // public domain / CC0 / BSD 2
-    val logback = "ch.qos.logback" % "logback-classic" % "1.2.9" // EPL 1.0 / LGPL 2.1
+    val logback = "ch.qos.logback" % "logback-classic" % "1.2.10" // EPL 1.0 / LGPL 2.1
   }
 
   object TestDeps {
