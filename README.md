@@ -7,7 +7,7 @@ For questions please use the [discuss.akka.io](https://discuss.akka.io). Tag any
 
 The documentation can be found [here](https://doc.akka.io/docs/akka-persistence-spanner/current/index.html)
 
-[![Build Status](https://travis-ci.com/akka/akka-persistence-spanner.svg?branch=master)](https://travis-ci.com/akka/akka-persistence-spanner)
+[![CI status](https://github.com/akka/akka-persistence-spanner/actions/workflows/check-build-test.yml/badge.svg)](https://github.com/akka/akka-persistence-spanner/actions/workflows/check-build-test.yml)
 
 ## Project status
 

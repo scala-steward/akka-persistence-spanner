@@ -19,7 +19,7 @@ inThisBuild(
         "https://gitter.im/akka/dev",
         url("https://github.com/akka/akka-persistence-spanner/graphs/contributors")
       ),
-    licenses := Seq(("Apache-2.0", url("http://www.apache.org/licenses/LICENSE-2.0"))),
+    licenses := Seq(("Apache-2.0", url("https://www.apache.org/licenses/LICENSE-2.0"))),
     description := "A replicated Akka Persistence journal backed by Spanner",
     // due to the emulator
     parallelExecution := false,
@@ -36,14 +36,13 @@ def common: Seq[Setting[_]] =
     crossScalaVersions := Seq(Dependencies.Scala213),
     scalaVersion := Dependencies.Scala213,
     crossVersion := CrossVersion.binary,
-    scalafmtOnCompile := true,
     sonatypeProfileName := "com.lightbend",
     // Setting javac options in common allows IntelliJ IDEA to import them automatically
-    javacOptions in compile ++= Seq("-encoding", "UTF-8", "-source", "1.8", "-target", "1.8"),
+    compile / javacOptions ++= Seq("-encoding", "UTF-8", "-source", "1.8", "-target", "1.8"),
     headerLicense := Some(HeaderLicense.Custom("""Copyright (C) 2021 Lightbend Inc. <https://www.lightbend.com>""")),
-    logBuffered in Test := System.getProperty("akka.logBufferedTests", "false").toBoolean,
+    Test / logBuffered := System.getProperty("akka.logBufferedTests", "false").toBoolean,
     // show full stack traces and test case durations
-    testOptions in Test += Tests.Argument("-oDF"),
+    Test / testOptions += Tests.Argument("-oDF"),
     // -v Log "test run started" / "test started" / "test run finished" events on log level "info" instead of "debug".
     // -a Show stack traces and exception class name for AssertionErrors.
     testOptions += Tests.Argument(TestFrameworks.JUnit, "-v", "-a"),
@@ -52,9 +51,10 @@ def common: Seq[Setting[_]] =
     resolvers += Resolver.sonatypeRepo("snapshots")
   )
 
-lazy val dontPublish = Seq(skip in publish := true, publishArtifact in Compile := false)
+lazy val dontPublish = Seq(publish / skip := true, Compile / publishArtifact := false)
 
-lazy val root = (project in file("."))
+lazy val root = project
+  .in(file("."))
   .settings(common)
   .settings(dontPublish)
   .settings(
@@ -64,18 +64,19 @@ lazy val root = (project in file("."))
   .aggregate(journal, testkit)
 
 lazy val dumpSchema = taskKey[Unit]("Dumps schema for docs")
-dumpSchema := (journal / runMain in (Test)).toTask(" akka.persistence.spanner.PrintSchema").value
+dumpSchema := (journal / Test / runMain).toTask(" akka.persistence.spanner.PrintSchema").value
 
 def suffixFileFilter(suffix: String): FileFilter = new SimpleFileFilter(f => f.getAbsolutePath.endsWith(suffix))
 
-lazy val journal = (project in file("journal"))
+lazy val journal = project
+  .in(file("journal"))
   .enablePlugins(AkkaGrpcPlugin)
   .settings(common)
   .settings(
     name := "akka-persistence-spanner",
     libraryDependencies ++= Dependencies.journal,
     // Workaround for https://github.com/akka/akka-persistence-spanner/issues/62
-    excludeFilter in PB.generate ~= (
+    PB.generate / excludeFilter ~= (
           f =>
             f ||
             suffixFileFilter("google/protobuf/any.proto") ||
@@ -92,18 +93,20 @@ lazy val journal = (project in file("journal"))
         )
   )
 
-lazy val testkit = (project in file("testkit"))
+lazy val testkit = project
+  .in(file("testkit"))
   .settings(common)
   .dependsOn(journal)
   .settings(name := "akka-persistence-spanner-testkit", libraryDependencies ++= Dependencies.testkit)
 
-lazy val example = (project in file("example"))
+lazy val example = project
+  .in(file("example"))
   .settings(common)
   .settings(dontPublish)
   .settings(
     name := "akka-persistence-spanner-example",
     libraryDependencies ++= Dependencies.example,
-    fork in run := false,
+    run / fork := false,
     Global / cancelable := false // let ctrl-c kill sbt
   )
   .dependsOn(journal)

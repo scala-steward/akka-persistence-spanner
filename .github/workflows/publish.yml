@@ -3,13 +3,13 @@ name: Publish
 on:
   push:
     branches:
-      - master
       - main
     tags: ["*"]
 
 jobs:
   sbt:
     name: sbt publish
+    if: github.repository == 'akka/akka-persistence-spanner'
     runs-on: ubuntu-18.04
     steps:
       - name: Checkout
@@ -18,9 +18,9 @@ jobs:
           # we don't know what commit the last tag was it's safer to get entire repo so previousStableVersion resolves
           fetch-depth: 0
       - name: Set up JDK 8
-        uses: olafurpg/setup-scala@v10
+        uses: coursier/setup-action@v1.1.2
         with:
-          java-version: adopt@1.8.0-275
+          jvm: adopt:8
       - name: Publish
         run: |-
           cp .jvmopts-travis .jvmopts
@@ -35,6 +35,7 @@ jobs:
 
   documentation:
     name: Documentation
+    if: github.repository == 'akka/akka-persistence-spanner'
     runs-on: ubuntu-18.04
     steps:
       - name: Checkout
@@ -43,9 +44,9 @@ jobs:
           # we don't know what commit the last tag was it's safer to get entire repo so previousStableVersion resolves
           fetch-depth: 0
       - name: Set up JDK 8
-        uses: olafurpg/setup-scala@v10
+        uses: coursier/setup-action@v1.1.2
         with:
-          java-version: adopt@1.8.0-275
+          jvm: adopt:8
       - name: Publish
         run: |-
           eval "$(ssh-agent -s)"
