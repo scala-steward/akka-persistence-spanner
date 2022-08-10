@@ -14,7 +14,7 @@ object Dependencies {
 
   val SpannerVersion = "1.52.0"
   val GrpcVersion = akka.grpc.gen.BuildInfo.grpcVersion
-  val GoogleAuthVersion = "0.27.0"
+  val GoogleAuthVersion = "1.10.0"
 
   object Compile {
     val akkaActorTyped = "com.typesafe.akka" %% "akka-actor-typed" % AkkaVersion
