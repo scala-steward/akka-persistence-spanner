@@ -19,7 +19,7 @@ inThisBuild(
         "https://gitter.im/akka/dev",
         url("https://github.com/akka/akka-persistence-spanner/graphs/contributors")
       ),
-    licenses := Seq(("Apache-2.0", url("https://www.apache.org/licenses/LICENSE-2.0"))),
+    licenses := Seq(("BUSL-1.1", url("https://raw.githubusercontent.com/akka/akka-persistence-spanner/main/LICENSE"))), // FIXME change s/main/v1.1.0/ when released
     description := "A replicated Akka Persistence journal backed by Spanner",
     // due to the emulator
     parallelExecution := false,

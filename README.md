@@ -15,4 +15,4 @@ Under development.
 
 ## License
 
-Akka Persistence Spanner is Open Source and available under the Apache 2 License.
+Akka Persistence Spanner is licensed under the Business Source License 1.1, see LICENSE.
