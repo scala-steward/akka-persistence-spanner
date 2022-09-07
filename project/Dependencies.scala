@@ -6,7 +6,7 @@ import sbt._
 
 object Dependencies {
   val Scala213 = "2.13.8"
-  val AkkaVersion = System.getProperty("override.akka.version", "2.6.18")
+  val AkkaVersion = System.getProperty("override.akka.version", "2.6.20")
   val AkkaVersionInDocs = AkkaVersion.take(3)
   // for example
   val AkkaHttpVersion = "10.2.3"
